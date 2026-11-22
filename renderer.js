@@ -486,10 +486,10 @@ function nextActivity(now) {
     case 'chase': { const id = [...others.keys()][0]; activity = { name, id, until: now + 3500 }; window.desk.social(id, 'chased'); break; }
     case 'cuddle': cuddle(); break;
     case 'roll': activity = { name, until: now + rand(3000, 5000) }; break;
-    case 'knead': activity = { name, until: now + rand(5000, 9000) }; break;
+    case 'knead': if (!restInBasket('knead', rand(5000, 9000))) activity = { name, until: now + rand(5000, 9000) }; break;
     case 'stretch': activity = { name, until: now + 1600 }; pulse('yawning', 1400); break;
     case 'groom': activity = { name, until: now + rand(5000, 9000) }; break;
-    case 'loaf': activity = { name, until: now + rand(30000, 90000) }; break;
+    case 'loaf': if (!restInBasket('loaf', rand(30000, 90000))) activity = { name, until: now + rand(30000, 90000) }; break;
     default: activity = { name: 'sit', until: now + rand(15000, 45000) };
   }
 }
@@ -679,6 +679,19 @@ function goToBasket(sleep, napMs) {
   script([{ walk: x, slow: true }, ...done]);
 }
 function goToSleep() { goToBasket(true); }
+
+// Se coucher ou pétrir : dans son panier s'il est sur cet écran (sinon là où il est)
+function restInBasket(pose, ms) {
+  const p = sharedPouf();
+  if (!p || state.expr.tier === 'dying') return false;
+  const x = others.size ? poufSlot(p) : p.x + p.w / 2 - cw / 2;
+  script([
+    { walk: x },
+    { fn: () => { s.onPouf = true; if (others.size) s.faceLeft = !!GUEST; } },
+    { pose, ms }
+  ]);
+  return true;
+}
 
 // ---- Scripts : petites séquences d'actions (marcher jusqu'ici, faire ça pendant tant de temps…) ----
 function script(steps) { activity = { name: 'script', steps, i: 0, t0: performance.now(), started: false }; }
