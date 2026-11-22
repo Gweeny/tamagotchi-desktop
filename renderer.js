@@ -37,7 +37,7 @@ let edges = { left: 'wall', right: 'wall' }; // 'screen' | 'friend' | 'wall' | '
 let here = false;     // le chat est-il sur cet écran ?
 let home = false;     // écran « maison » (pouf, crottes) ?
 let K = 1, cw = BASE_W, ch = BASE_H, U = cw / 140; // taille (un chaton est bien plus petit)
-const s = { x: 200, y: 0, vx: 0, vy: 0, rot: 0, vrot: 0, dragging: false, onFloor: false, gone: true, faceLeft: false, thrown: false, onPouf: false };
+const s = { x: 200, y: 0, vx: 0, vy: 0, rot: 0, vrot: 0, dragging: false, onFloor: false, gone: true, faceLeft: false, thrown: false, onPouf: false, travel: false };
 let dragOffset = { x: 0, y: 0 };
 let samples = [];     // positions récentes de la souris (vitesse des lancers)
 const mouse = { x: -1, y: -1, inside: false, lastMove: 0, speed: 0 };
@@ -49,7 +49,9 @@ let activity = { name: 'sit', until: 0 };
 let game = null;      // jeu en cours
 let care = null;      // séance de caresses ou de brossage
 let lastHunt = 0;
-let poufX = null;     // position du pouf (px, bord gauche)
+let poufX = null;     // position du pouf (px, bord gauche) — seulement sur l'écran du panier
+let poufDir = null;   // sinon : de quel côté se trouve l'écran du panier ('left' / 'right')
+let napGoal = null;   // il change d'écran pour aller faire la sieste dans son panier
 const others = new Map(); // autres chats sur cet écran (visite) : id -> { x, y, cw, ch, faceLeft, pose, asleep, onPouf, t }
 const greeted = new Set();
 let rig = null;
@@ -65,6 +67,7 @@ Promise.all([window.desk.getScreen(), window.desk.getState()]).then(([scr, res])
   edges = scr.edges;
   here = scr.catHere;
   home = !!scr.home;
+  poufDir = scr.poufDir || null;
   if (home) placePouf(scr.poufX);
   s.x = W - cw - 150; s.y = floorY - ch;
 
@@ -93,6 +96,14 @@ window.desk.onAnim(playAnim);
 window.desk.onGame((name) => (name ? startGame(name) : endGame(false)));
 window.desk.onBrush(() => startCare('brush', true));
 window.desk.onTogglePanel(togglePanel);
+// Le panier a changé d'écran
+window.desk.onPoufInfo((info) => {
+  home = !!info.home; poufDir = info.poufDir || null;
+  if (home) placePouf(info.poufX);
+  else { poufX = null; poufEl.style.display = 'none'; poopsEl.replaceChildren(); knownPoops = null; }
+  if (home && state && !GUEST) syncPoops(state, state);
+  if (s.onPouf && !home) s.onPouf = false;
+});
 window.desk.onNotice((text) => hint(String(text).slice(0, 120))); // petit message d'interface en haut de l'écran
 window.desk.onAskCity((current) => openPrompt({
   title: 'Ta ville (météo)', hint: 'Facultatif. Le nom de la ville est envoyé au service gratuit Open-Meteo pour connaître la météo (pluie, neige, chaleur).',
@@ -137,6 +148,7 @@ window.desk.onEnter((m) => {
     s.vx = dir * Math.max(Math.abs(m.vx), 250);
     s.vy = m.vy; s.rot = m.rot; s.vrot = s.vx * 0.2;
     activity = { name: 'walk', until: performance.now() + 4000, target: clamp(s.x + dir * 260, 10, W - cw - 10) };
+    if (m.nap > 0) setTimeout(() => { if (here && state && !state.asleep && !game && !care) goToBasket(false, m.nap); }, 500); // il continue jusqu'à son panier
   }
   s.onFloor = false;
   showCat();
@@ -217,7 +229,14 @@ function throwVelocity() {
 }
 
 function release() {
-  if (poufDrag) { poufDrag = null; window.desk.setPouf(poufX / W); if (!poufEl.matches(':hover')) window.desk.setClickable(false); return; }
+  if (poufDrag) {
+    poufDrag = null;
+    const side = mouse.x <= 20 ? 'left' : mouse.x >= W - 20 ? 'right' : null; // lâché contre un bord (ou au-delà)
+    if (side) window.desk.movePouf(side);
+    else window.desk.setPouf((poufX + POUF_W / 2) / W);
+    if (!poufEl.matches(':hover')) window.desk.setClickable(false);
+    return;
+  }
   if (ball.held) releaseBall();
   if (!s.dragging) return;
   s.dragging = false;
@@ -312,7 +331,7 @@ function physics(dt) {
 }
 
 const now2 = () => performance.now();
-const isMoving = () => ['walk', 'run', 'chase', 'flee', 'hunt', 'crazy'].includes(activity.name) || (activity.name === 'script' && activity.steps[activity.i] && 'walk' in activity.steps[activity.i]);
+const isMoving = () => ['walk', 'run', 'chase', 'flee', 'hunt', 'crazy'].includes(activity.name) || (activity.name === 'script' && activity.steps[activity.i] && ('walk' in activity.steps[activity.i] || 'exit' in activity.steps[activity.i]));
 
 // Petit saut (avec étirement au décollage)
 function hop(vy, vx) {
@@ -327,7 +346,8 @@ function sideEdge(side) {
   const out = side === 'left' ? s.x < 0 : s.x + cw > W;
   if (!out) return;
   // Pendant un jeu ou quand il se promène tout seul, les bords sont des murs : seul un lancer le fait changer d'écran
-  const kind = !game && s.thrown ? edges[side] : 'wall';
+  let kind = !game && (s.thrown || s.travel) ? edges[side] : 'wall';
+  if (s.travel && !s.thrown && kind !== 'screen') kind = 'wall'; // il va à son panier : jamais chez un ami
   if (kind === 'screen' || kind === 'friend' || kind === 'home') {
     const gone = side === 'left' ? s.x + cw < 0 : s.x > W;
     if (gone) handOff(side, kind);
@@ -341,9 +361,11 @@ function sideEdge(side) {
 }
 
 function handOff(side, kind) {
+  s.travel = false;
   // Parti chez l'ami : cette fenêtre reste « la sienne » (elle affiche la pancarte, et il reviendra ici)
   here = kind === 'friend';
-  window.desk.exit({ side, y: s.y, vx: s.vx, vy: s.vy, rot: s.rot });
+  window.desk.exit({ side, y: s.y, vx: s.vx, vy: s.vy, rot: s.rot, nap: napGoal || 0 });
+  napGoal = null;
   hideCat();
   closePanel();
 }
@@ -457,7 +479,7 @@ function nextActivity(now) {
   switch (name) {
     case 'walk': activity = { name, target: target(), until: now + 12000 }; break;
     case 'crazy': startCrazy(now); break;
-    case 'nap': activity = { name: 'nap', until: now + rand(60000, 120000) }; if (Math.random() < 0.5) icon('rain', 1600); break;
+    case 'nap': if (raining() && Math.random() < 0.5) icon('rain', 1600); goToBasket(false, rand(60000, 120000)); break;
     case 'approach': // (câlin) il vient s'asseoir près de toi
       if (mouse.inside && now - mouse.lastMove < 20000) { activity = { name: 'walk', target: clamp(mouse.x - cw / 2 + (mouse.x > catCenter() ? -60 : 60), 0, W - cw), until: now + 10000 }; break; }
       activity = { name: 'sit', until: now + rand(15000, 30000) }; break;
@@ -627,24 +649,36 @@ function cuddle() {
   ]);
 }
 
-// S'endormir : dans le panier (blotti contre l'autre chat s'il y en a un), sinon là où il est
-function goToSleep(now) {
+// Aller au panier pour dormir (nuit) ou faire la sieste : blotti contre l'autre chat s'il y en a un.
+// Si le panier est sur un autre de mes écrans, il y va à pied en passant d'un écran à l'autre.
+function goToBasket(sleep, napMs) {
   const p = sharedPouf();
-  if (!p) { // pas de panier : contre l'autre chat s'il dort, sinon sur place
-    const sleeper = [...others.values()].find(o => o.asleep);
-    if (!sleeper) { activity = { name: 'sleep' }; return; }
-    const x = clamp(sleeper.x + (sleeper.x > s.x ? -1 : 1) * sleeper.cw * 0.55, 0, W - cw);
-    script([{ walk: x, slow: true }, { fn: () => { activity = { name: 'sleep' }; } }]);
+  const done = sleep
+    ? [{ fn: () => { activity = { name: 'sleep' }; } }]
+    : [{ pose: 'loaf', ms: napMs, face: { eyes: 'closed' }, cls: ['purr'] }];
+  if (p) {
+    const x = others.size ? poufSlot(p) : p.x + p.w / 2 - cw / 2;
+    script([
+      { walk: x, slow: sleep },
+      { fn: () => { s.onPouf = true; if (others.size) s.faceLeft = !!GUEST; } },
+      { pose: 'knead', ms: 1600, face: { eyes: 'closed' }, cls: ['purr'] },
+      ...done
+    ]);
     return;
   }
-  const x = others.size ? poufSlot(p) : p.x + p.w / 2 - cw / 2;
-  script([
-    { walk: x, slow: true },
-    { fn: () => { s.onPouf = true; if (others.size) s.faceLeft = !!GUEST; } },
-    { pose: 'knead', ms: 1600, face: { eyes: 'closed' }, cls: ['purr'] },
-    { fn: () => { activity = { name: 'sleep' }; } }
-  ]);
+  if (poufDir && !GUEST) { // le panier est sur un autre écran : il y va (en baillant)
+    const dir = poufDir === 'left' ? -1 : 1;
+    napGoal = sleep ? null : napMs; // à l'arrivée, il continuera jusqu'à son panier
+    script([{ exit: dir }]);
+    return;
+  }
+  // Pas de panier ici (invité sans panier à portée) : contre l'autre chat s'il dort, sinon sur place
+  const sleeper = [...others.values()].find(o => o.asleep);
+  if (!sleeper) { if (sleep) activity = { name: 'sleep' }; else script(done); return; }
+  const x = clamp(sleeper.x + (sleeper.x > s.x ? -1 : 1) * sleeper.cw * 0.55, 0, W - cw);
+  script([{ walk: x, slow: true }, ...done]);
 }
+function goToSleep() { goToBasket(true); }
 
 // ---- Scripts : petites séquences d'actions (marcher jusqu'ici, faire ça pendant tant de temps…) ----
 function script(steps) { activity = { name: 'script', steps, i: 0, t0: performance.now(), started: false }; }
@@ -661,6 +695,12 @@ function runScript(now) {
   if (!a.started) { a.started = true; a.t0 = now; if (st.onStart) st.onStart(); renderLook(); }
   const next = () => { if (st.onEnd) st.onEnd(); a.i++; a.started = false; };
   if ('fn' in st) { st.fn(); if (activity === a) next(); return; }
+  if ('exit' in st) { // traverser vers l'écran voisin (le processus principal le fait passer)
+    if (!s.onFloor) return;
+    s.onPouf = false; s.travel = true;
+    s.vx = st.exit * WALK * 0.8 * speedK(); s.faceLeft = st.exit < 0;
+    return;
+  }
   if ('walk' in st) {
     if (!s.onFloor) return;
     const dx = clamp(st.walk, 0, W - cw) - s.x; // jamais au-delà des bords de l'écran
@@ -681,7 +721,7 @@ function currentPose() {
   if (s.dragging || !s.onFloor) return 'jump';
   if (care) return care.pose || 'sit';
   const st = scriptStep();
-  if (st) return 'walk' in st ? 'walk' : st.pose || 'sit';
+  if (st) return 'walk' in st || 'exit' in st ? 'walk' : st.pose || 'sit';
   if (state.asleep) return activity.name === 'sleep' ? 'sleep' : 'walk';
   if (game && game.pose) return game.pose;
   if (state.expr.tier === 'dying') return 'loaf';
@@ -1182,6 +1222,7 @@ function flash(cls, ms) {
 function placePouf(ratio, x) {
   if (!home || GUEST) return;
   poufX = x !== undefined ? clamp(x, 0, W - POUF_W) : clamp((Number.isFinite(ratio) ? ratio : 0.82) * W - POUF_W / 2, 0, W - POUF_W);
+  if (x !== undefined && (x < 0 || x > W - POUF_W)) poufEl.classList.add('leaving'); else poufEl.classList.remove('leaving');
   poufEl.style.display = 'block';
   poufEl.style.left = poufX + 'px';
   poufEl.style.top = (floorY - POUF_H + 5) + 'px';

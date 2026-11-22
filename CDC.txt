@@ -38,7 +38,7 @@ F3 · P1 · Fait — Le chat vit tout seul, et calmement : la plupart du temps i
 F3e · P1 · Fait — Son quart d'heure de folie : au plus une fois par heure, il court, saute et court après sa queue partout pendant 30 s, puis se couche, épuisé.
 F3b · P1 · Fait — Il n'est jamais figé : respiration permanente, queue et oreilles qui bougent, clignements, yeux et tête qui suivent la souris (ou ce qui l'intéresse), écrasement à l'atterrissage et étirement au décollage.
 F3c · P1 · Fait — Animation réaliste : pattes articulées (hanche/épaule, genou/coude, cheville/poignet) animées par programme ; le rythme de marche suit la distance parcourue (les pattes ne glissent pas) ; passage en fondu d'une pose à l'autre.
-F3d · P1 · Fait — Il a un pouf (déplaçable à la souris) : il y va pour dormir, pétrit, puis s'y endort.
+F3d · P1 · Fait — Il a un panier (assez grand pour deux), déplaçable à la souris, y compris sur un autre de mes écrans (on le lâche contre le bord) ; jamais chez un ami. Il y dort toujours, la nuit comme pour ses siestes : s'il est sur un autre écran, il y va à pied en changeant d'écran.
 F4 · P1 · Fait — Une icône dans la zone de notification donne accès à tous les soins, aux statistiques, au rappel du chat sur l'écran principal, à la pension, et permet de masquer, afficher ou quitter l'app.
 F5 · P3 · À faire — L'app peut se lancer au démarrage de Windows (option).
 
@@ -127,7 +127,7 @@ L'app est une application Electron en JavaScript.
 • Réseau (lan.js) : découverte des amis en broadcast UDP (port 41234) et messages en HTTP sur un port libre annoncé, sans serveur central. Testé seul (lan.test.js). Une fenêtre séparée affiche chaque chat invité.
 • Pare-feu : au premier lancement, Windows demande d'autoriser l'app sur les réseaux privés ; il faut accepter, sinon les amis ne se voient pas.
 • Packaging : electron-builder (installateur .exe).
-• Mises à jour (updater.js, sans paquet) : au démarrage puis toutes les 6 h, l'app demande à GitHub la dernière version publiée (Releases) ; si elle est plus récente, « Mettre à jour » télécharge l'installateur et relance l'app (sauvegarde conservée).
+• Mises à jour (updater.js, sans paquet) : au démarrage puis toutes les heures (ou via « Version … — rechercher une mise à jour » dans le menu), l'app demande à GitHub la dernière version publiée (Releases) ; si elle est plus récente, « Mettre à jour » télécharge l'installateur et relance l'app (sauvegarde conservée).
 • Hébergement : code et versions sur GitHub (gratuit, dépôt public).
 Messages échangés entre amis :
 • annonce (UDP) : identifiant, pseudo et port, toutes les 2 s. Un ami disparaît après 7 s sans annonce.

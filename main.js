@@ -29,7 +29,7 @@ const windows = new Map(); // id de l'écran -> fenêtre transparente
 let catDisplayId = null;   // écran où se trouve le chat
 let cat = null;            // état du chat (null tant qu'il n'a pas été créé)
 // friendSide : côté du PC de l'ami ; friendId : l'ami choisi ; nickname : mon pseudo sur le réseau
-let settings = { id: null, nickname: null, friendSide: null, friendId: null, acceptVisits: true, friendIps: [], poufX: 0.82, weatherCity: null, weatherCoords: null };
+let settings = { id: null, nickname: null, friendSide: null, friendId: null, acceptVisits: true, friendIps: [], poufX: 0.82, poufDisplay: null, weatherCity: null, weatherCoords: null };
 let tray = null;
 let hidden = false;        // fenêtres masquées depuis la zone de notification
 let lan = null;
@@ -72,6 +72,7 @@ function loadSettings() {
   if (typeof s.acceptVisits === 'boolean') settings.acceptVisits = s.acceptVisits;
   if (Array.isArray(s.friendIps)) settings.friendIps = s.friendIps.filter(isIPv4).slice(0, 10);
   if (Number.isFinite(s.poufX)) settings.poufX = Math.max(0, Math.min(1, s.poufX));
+  if (Number.isFinite(s.poufDisplay)) settings.poufDisplay = s.poufDisplay;
   if (typeof s.weatherCity === 'string') settings.weatherCity = s.weatherCity.slice(0, 60);
   if (s.weatherCoords && Number.isFinite(s.weatherCoords.lat) && Number.isFinite(s.weatherCoords.lon)) settings.weatherCoords = { lat: s.weatherCoords.lat, lon: s.weatherCoords.lon };
   settings.id = typeof s.id === 'string' && s.id ? s.id : crypto.randomUUID();
@@ -154,11 +155,15 @@ function stopGame() {
 // ---------- Mises à jour (GitHub) ----------
 let update = null;      // { version, url, name, size } quand une nouvelle version existe
 let updating = false;
-async function checkUpdate() {
+async function checkUpdate(manual = false) {
   try {
     update = await updater.checkForUpdate(updateRepo, app.getVersion());
     if (update && tray) tray.setToolTip(`Tamagotchi — nouvelle version ${update.version} disponible`);
-  } catch (e) { console.error('Mise à jour :', e.message); }
+    if (manual) sendToCat('notice', update ? `Nouvelle version ${update.version} disponible : clic droit > ✨ Mettre à jour` : `Tu as la dernière version (${app.getVersion()})`);
+  } catch (e) {
+    console.error('Mise à jour :', e.message);
+    if (manual) sendToCat('notice', 'Impossible de vérifier les mises à jour (pas de connexion ?)');
+  }
 }
 async function installUpdate() {
   if (!update || updating) return;
@@ -171,6 +176,8 @@ async function installUpdate() {
   if (tray) tray.setToolTip('La mise à jour a échoué, réessaie plus tard');
 }
 const updateItems = () => (update ? [{ label: updating ? `Téléchargement de la version ${update.version}…` : `✨ Mettre à jour vers la version ${update.version}`, enabled: !updating, click: installUpdate }, { type: 'separator' }] : []);
+// En bas des menus : la version, et vérifier soi-même s'il y a du nouveau
+const versionItems = () => [{ label: `Version ${app.getVersion()} — rechercher une mise à jour`, click: () => { showAll(); checkUpdate(true); } }];
 
 // ---------- Météo ----------
 // Facultatif : si on a donné sa ville, on demande la météo à Open-Meteo (gratuit, sans clé, sans paquet en plus)
@@ -261,14 +268,33 @@ function sendEdges() {
   }
 }
 
+// Écran du panier (et des crottes) : celui choisi en déplaçant le panier, sinon l'écran principal
+function poufDisplay() {
+  return screen.getAllDisplays().find(d => d.id === settings.poufDisplay) || screen.getPrimaryDisplay();
+}
+// Depuis l'écran d, de quel côté (dans la rangée de mes écrans) se trouve le panier ? null s'il est ici
+function poufDirFrom(d) {
+  const chain = screenChain(), i = chain.findIndex(o => o.id === d.id), j = chain.findIndex(o => o.id === poufDisplay().id);
+  return i < 0 || j < 0 || i === j ? null : j > i ? 'right' : 'left';
+}
+// Prévient toutes les fenêtres (et les chats invités) de l'endroit où est le panier
+function sendPouf() {
+  for (const d of screen.getAllDisplays()) {
+    const w = windows.get(d.id);
+    if (w) w.webContents.send('pouf-info', { home: d.id === poufDisplay().id, poufX: settings.poufX, poufDir: poufDirFrom(d) });
+  }
+  for (const g of guests.values()) if (!g.win.isDestroyed()) g.win.webContents.send('pouf-info', { home: false, poufX: null, poufDir: poufDirFrom(guestDisplay(g)) });
+}
+
 function screenInfo(d) {
   const e = edgesOf(d);
   return {
     bounds: d.bounds, workArea: d.workArea,
     edges: { left: e.left.type, right: e.right.type },
     catHere: d.id === catDisplayId,
-    home: d.id === screen.getPrimaryDisplay().id,
-    poufX: settings.poufX
+    home: d.id === poufDisplay().id,
+    poufX: settings.poufX,
+    poufDir: poufDirFrom(d)
   };
 }
 
@@ -423,7 +449,7 @@ const guestDisplay = (g) => screen.getAllDisplays().find(d => d.id === g.display
 function guestScreenInfo(g) {
   const d = guestDisplay(g), e = edgesOf(d);
   const map = (t) => (t.type === 'friend' ? 'home' : t.type); // bord « ami » = retour chez son propriétaire
-  return { bounds: d.bounds, workArea: d.workArea, catHere: true, guest: true, home: false, edges: { left: map(e.left), right: map(e.right) } };
+  return { bounds: d.bounds, workArea: d.workArea, catHere: true, guest: true, home: false, poufDir: poufDirFrom(d), edges: { left: map(e.left), right: map(e.right) } };
 }
 
 function closeGuest(visitId) {
@@ -524,6 +550,7 @@ function setFriendSide(side) {
   settings.friendSide = side;
   saveSettings();
   sendEdges();
+  sendPouf();
 }
 
 function friendMenu() {
@@ -562,16 +589,16 @@ function menuTemplate(fromTray) {
   return [...updateItems(), ...menuItems(fromTray)];
 }
 function menuItems(fromTray) {
-  const quit = { label: 'Quitter', click: () => app.quit() };
+  const quit = [...versionItems(), { label: 'Quitter', click: () => app.quit() }];
   const trayExtra = fromTray ? [{ label: hidden ? 'Afficher' : 'Masquer', click: toggleHidden }] : [];
-  if (!cat) return [friendMenu(), ...trayExtra, { type: 'separator' }, quit];
-  if (cat.dead) return [{ label: 'Adopter un nouveau chaton', click: adoptNew }, friendMenu(), ...trayExtra, { type: 'separator' }, quit];
+  if (!cat) return [friendMenu(), ...trayExtra, { type: 'separator' }, ...quit];
+  if (cat.dead) return [{ label: 'Adopter un nouveau chaton', click: adoptNew }, friendMenu(), ...trayExtra, { type: 'separator' }, ...quit];
   if (visit) return [
     { label: `Faire revenir ${cat.name} (chez ${visit.nick})`, click: recallCat },
-    { label: 'Statistiques', click: toggleStats }, friendMenu(), ...trayExtra, { type: 'separator' }, quit
+    { label: 'Statistiques', click: toggleStats }, friendMenu(), ...trayExtra, { type: 'separator' }, ...quit
   ];
   if (cat.boarding) return [
-    { label: `Récupérer ${cat.name}`, click: act('unboard') }, friendMenu(), ...trayExtra, { type: 'separator' }, quit
+    { label: `Récupérer ${cat.name}`, click: act('unboard') }, friendMenu(), ...trayExtra, { type: 'separator' }, ...quit
   ];
   return [
     { label: 'Nourrir', submenu: [
@@ -598,7 +625,7 @@ function menuItems(fromTray) {
     weatherMenu(),
     ...trayExtra,
     { type: 'separator' },
-    quit
+    ...quit
   ];
 }
 
@@ -728,7 +755,8 @@ ipcMain.on('exit', (e, msg) => {
     side: msg.side === 'right' ? 'left' : 'right',
     // même hauteur relative (les écrans n'ont pas forcément la même taille ni la même position)
     y: (num(msg.y) / d.bounds.height) * target.bounds.height,
-    vx: num(msg.vx), vy: num(msg.vy), rot: num(msg.rot)
+    vx: num(msg.vx), vy: num(msg.vy), rot: num(msg.rot),
+    nap: Math.max(0, Math.min(300000, num(msg.nap)))
   });
 });
 
@@ -772,6 +800,17 @@ ipcMain.on('brush-end', () => { brushing = 0; });
 ipcMain.on('clean-poop', (e, index) => {
   if (guestOf(e.sender) || !cat || !Number.isInteger(index)) return;
   doAction('clean', { index });
+});
+ipcMain.on('move-pouf', (e, side) => {
+  if (guestOf(e.sender) || !['left', 'right'].includes(side)) return;
+  const d = displayOf(e.sender);
+  if (!d || d.id !== poufDisplay().id) return;
+  const edge = edgesOf(d)[side];
+  if (edge.type !== 'screen') { e.sender.send('pouf-info', { home: true, poufX: settings.poufX, poufDir: null }); return; } // ami ou mur : il reste ici
+  settings.poufDisplay = edge.to;
+  settings.poufX = side === 'right' ? 0.1 : 0.9; // il arrive près du bord par lequel on l'a fait passer
+  saveSettings();
+  sendPouf();
 });
 ipcMain.on('set-pouf', (e, ratio) => {
   if (guestOf(e.sender) || !Number.isFinite(ratio)) return;
@@ -842,8 +881,8 @@ app.whenReady().then(() => {
   startLan();
   updateWeather();
   setInterval(updateWeather, WEATHER_MS);
-  setTimeout(checkUpdate, 15000);                 // nouvelle version ? au démarrage puis toutes les 6 h
-  setInterval(checkUpdate, 6 * 3600000);
+  setTimeout(checkUpdate, 15000);                 // nouvelle version ? au démarrage puis toutes les heures
+  setInterval(checkUpdate, 3600000);
   // Petit délai : sous Linux, la transparence a parfois besoin que le compositeur soit prêt
   setTimeout(buildWindows, process.platform === 'linux' ? 300 : 0);
 });

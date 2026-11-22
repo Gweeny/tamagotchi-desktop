@@ -11,7 +11,7 @@ contextBridge.exposeInMainWorld('desk', {
   getWeather: () => ipcRenderer.invoke('get-weather'),
   event: (ev) => ipcRenderer.send('cat-event', String(ev)),
   exit: (msg) => ipcRenderer.send('exit', {
-    side: String(msg.side), y: Number(msg.y), vx: Number(msg.vx), vy: Number(msg.vy), rot: Number(msg.rot)
+    side: String(msg.side), y: Number(msg.y), vx: Number(msg.vx), vy: Number(msg.vy), rot: Number(msg.rot), nap: Number(msg.nap) || 0
   }),
   playTick: () => ipcRenderer.send('play-tick'),
   petStart: () => ipcRenderer.send('pet-start'),
@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('desk', {
   brushEnd: () => ipcRenderer.send('brush-end'),
   cleanPoop: (index) => ipcRenderer.send('clean-poop', Number(index)),
   setPouf: (ratio) => ipcRenderer.send('set-pouf', Number(ratio)),
+  movePouf: (side) => ipcRenderer.send('move-pouf', String(side)),
   pos: (p) => ipcRenderer.send('pos', {
     x: Number(p.x), y: Number(p.y), cw: Number(p.cw), ch: Number(p.ch), faceLeft: !!p.faceLeft,
     pose: String(p.pose), asleep: !!p.asleep, onPouf: !!p.onPouf,
@@ -39,6 +40,7 @@ contextBridge.exposeInMainWorld('desk', {
   onAskNick: (cb) => ipcRenderer.on('ask-nick', (_e, current) => cb(current)),
   onAskIp: (cb) => ipcRenderer.on('ask-ip', () => cb()),
   onBrush: (cb) => ipcRenderer.on('brush', () => cb()),
+  onPoufInfo: (cb) => ipcRenderer.on('pouf-info', (_e, info) => cb(info)),
   onNotice: (cb) => ipcRenderer.on('notice', (_e, text) => cb(text)),
   onRescreen: (cb) => ipcRenderer.on('rescreen', (_e, info) => cb(info)),
   onAskCity: (cb) => ipcRenderer.on('ask-city', (_e, current) => cb(current)),
