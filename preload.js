@@ -1,0 +1,53 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+// Seul pont entre la page et le processus principal : aucune API Node n'est exposée
+contextBridge.exposeInMainWorld('desk', {
+  setClickable: (v) => ipcRenderer.send('set-clickable', !!v),
+  getScreen: () => ipcRenderer.invoke('get-screen'),
+  getState: () => ipcRenderer.invoke('get-state'),
+  setup: (name, color, friendSide, personality) => ipcRenderer.invoke('setup', String(name), String(color), String(friendSide), String(personality)),
+  setPersonality: (key) => ipcRenderer.send('set-personality', String(key)),
+  setCity: (city) => ipcRenderer.send('set-city', String(city)),
+  getWeather: () => ipcRenderer.invoke('get-weather'),
+  event: (ev) => ipcRenderer.send('cat-event', String(ev)),
+  exit: (msg) => ipcRenderer.send('exit', {
+    side: String(msg.side), y: Number(msg.y), vx: Number(msg.vx), vy: Number(msg.vy), rot: Number(msg.rot)
+  }),
+  playTick: () => ipcRenderer.send('play-tick'),
+  petStart: () => ipcRenderer.send('pet-start'),
+  petTick: () => ipcRenderer.send('pet-tick'),
+  brushTick: () => ipcRenderer.send('brush-tick'),
+  brushEnd: () => ipcRenderer.send('brush-end'),
+  cleanPoop: (index) => ipcRenderer.send('clean-poop', Number(index)),
+  setPouf: (ratio) => ipcRenderer.send('set-pouf', Number(ratio)),
+  pos: (p) => ipcRenderer.send('pos', {
+    x: Number(p.x), y: Number(p.y), cw: Number(p.cw), ch: Number(p.ch), faceLeft: !!p.faceLeft,
+    pose: String(p.pose), asleep: !!p.asleep, onPouf: !!p.onPouf
+  }),
+  social: (to, type) => ipcRenderer.send('social', String(to), String(type)),
+  setNick: (nick) => ipcRenderer.send('set-nick', String(nick)),
+  addFriendIp: (ip) => ipcRenderer.send('add-friend-ip', String(ip)),
+  guestReady: () => ipcRenderer.send('guest-ready'),
+  gameEnded: () => ipcRenderer.send('game-ended'),
+  showMenu: () => ipcRenderer.send('cat-menu'),
+  focus: () => ipcRenderer.send('focus'),
+  quit: () => ipcRenderer.send('quit'),
+  onState: (cb) => ipcRenderer.on('state', (_e, st) => cb(st)),
+  onIcon: (cb) => ipcRenderer.on('icon', (_e, key) => cb(key)),
+  onLeave: (cb) => ipcRenderer.on('leave', () => cb()),
+  onAskNick: (cb) => ipcRenderer.on('ask-nick', (_e, current) => cb(current)),
+  onAskIp: (cb) => ipcRenderer.on('ask-ip', () => cb()),
+  onBrush: (cb) => ipcRenderer.on('brush', () => cb()),
+  onRescreen: (cb) => ipcRenderer.on('rescreen', (_e, info) => cb(info)),
+  onAskCity: (cb) => ipcRenderer.on('ask-city', (_e, current) => cb(current)),
+  onWeather: (cb) => ipcRenderer.on('weather', (_e, wx) => cb(wx)),
+  onOthers: (cb) => ipcRenderer.on('others', (_e, list) => cb(list)),
+  onSocial: (cb) => ipcRenderer.on('social', (_e, msg) => cb(msg)),
+  onAnim: (cb) => ipcRenderer.on('anim', (_e, name) => cb(name)),
+  onGame: (cb) => ipcRenderer.on('game', (_e, name) => cb(name)),
+  onTogglePanel: (cb) => ipcRenderer.on('toggle-panel', () => cb()),
+  onEnter: (cb) => ipcRenderer.on('enter', (_e, m) => cb(m)),
+  onBounce: (cb) => ipcRenderer.on('bounce', (_e, side) => cb(side)),
+  onEdges: (cb) => ipcRenderer.on('edges', (_e, edges) => cb(edges)),
+  onSetup: (cb) => ipcRenderer.on('setup', (_e, opts) => cb(opts))
+});

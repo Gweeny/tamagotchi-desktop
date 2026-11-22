@@ -1,0 +1,150 @@
+Cahier des charges — Tamagotchi Desktop
+22 nov. 2026 · @Sam · mis à jour le 22 nov. 2026 (v0.5 en cours)
+
+Contexte et objectifs
+L'app est un chaton virtuel qui vit sur le bureau Windows : on l'adopte, on s'en occupe comme d'un Tamagotchi, il grandit, on peut le lancer à la souris d'un écran à l'autre, et il peut voyager chez un ami connecté au même réseau. Le projet s'inspire d'une démo vue en cours sous Linux.
+• Avoir un compagnon kawaii et attachant qui ne gêne pas le travail (les clics passent à travers, il ne vole pas le focus).
+• Reproduire la boucle Tamagotchi : des besoins qui baissent avec le temps, des soins qui les remontent, et une vraie conséquence si on le néglige.
+• Rendre l'app sociale : envoyer son chat chez un ami.
+• Apprendre Electron, une boucle physique, l'animation SVG et le réseau sur un projet perso.
+
+Principes
+• Le chat ne parle pas : c'est un Tamagotchi. Ses besoins et ses réactions s'affichent avec des icônes dans une bulle (poisson, cœur, lune…), jamais avec du texte. Le texte est réservé à l'interface (menus, panneau de statistiques, adoption).
+• Style visuel : sticker kawaii (référence : chaton siamois aux grands yeux bleus) : grosse tête, très grands yeux brillants, petite bouche, joues roses, dégradés doux, très expressif, toujours en mouvement.
+• Toutes les robes ont exactement le même style : seules les couleurs changent (pelage, teinte foncée des oreilles, du masque, des pattes et du bout de la queue, couleur des yeux).
+
+Périmètre et plateformes
+La cible principale est Windows 10/11 ; Linux (Kubuntu, KDE) sert de plateforme de test secondaire.
+
+Inclus
+• Plateformes : Windows 10/11, Kubuntu (X11/KDE Wayland).
+• Animaux : un chat par utilisateur, adopté chaton, plusieurs robes (siamois, roux, gris, noir, blanc, crème).
+• Multi-écran : un passage d'un écran à l'autre quand on lance le chat (rangée logique, voir F26).
+• Réseau : voyage chez un ami sur le même réseau local.
+
+Exclu (pour l'instant)
+• macOS, mobile, GNOME Wayland.
+• Plusieurs espèces, plusieurs animaux.
+• Comptes, mots de passe, boutique.
+• Notifications Windows.
+
+Fonctionnalités
+Chaque exigence a un identifiant, une priorité (P1 = indispensable pour la v1, P2 = souhaité, P3 = bonus) et un état.
+
+Compagnon de bureau
+F1 · P1 · Fait — Le chat s'affiche dans une fenêtre transparente par écran, sans bordure et toujours au premier plan, posé sur la barre des tâches.
+F2 · P1 · Fait — Les clics passent à travers la fenêtre sauf sur le chat (et sur la balle ou le panneau quand ils sont affichés).
+F3 · P1 · Fait — Le chat vit tout seul, et calmement : la plupart du temps il est assis, couché ou fait sa toilette (15 s à 1 min 30 par activité) ; il marche, s'étire, se roule sur le dos, pétrit. Son humeur, son âge, son énergie, son poids, son caractère et la météo changent sa façon de bouger.
+F3e · P1 · Fait — Son quart d'heure de folie : au plus une fois par heure, il court, saute et court après sa queue partout pendant 30 s, puis se couche, épuisé.
+F3b · P1 · Fait — Il n'est jamais figé : respiration permanente, queue et oreilles qui bougent, clignements, yeux et tête qui suivent la souris (ou ce qui l'intéresse), écrasement à l'atterrissage et étirement au décollage.
+F3c · P1 · Fait — Animation réaliste : pattes articulées (hanche/épaule, genou/coude, cheville/poignet) animées par programme ; le rythme de marche suit la distance parcourue (les pattes ne glissent pas) ; passage en fondu d'une pose à l'autre.
+F3d · P1 · Fait — Il a un pouf (déplaçable à la souris) : il y va pour dormir, pétrit, puis s'y endort.
+F4 · P1 · Fait — Une icône dans la zone de notification donne accès à tous les soins, aux statistiques, au rappel du chat sur l'écran principal, à la pension, et permet de masquer, afficher ou quitter l'app.
+F5 · P3 · À faire — L'app peut se lancer au démarrage de Windows (option).
+
+Physique
+F6 · P1 · Fait — On attrape le chat à la souris et on le lâche avec la vitesse du geste.
+F7 · P1 · Fait — Gravité, rebonds sur le sol et le plafond, frottement au sol.
+F8 · P2 · Fait — Un choc violent l'étourdit (yeux en croix) et fait baisser son humeur.
+F9 · P3 · À faire — Un lancer trop fréquent le rend craintif : il fuit la souris pendant un moment.
+
+Besoins (le cœur Tamagotchi)
+Chaque jauge va de 0 à 100 et baisse avec le temps, y compris quand l'app est fermée (rattrapage au lancement).
+Rythme de soins visé : nourrir 3 fois par jour, jouer 2 fois par jour, nettoyer la litière 1 fois par jour, vétérinaire 1 fois par semaine.
+Les jauges baissent vite jusqu'à 20, puis très lentement : le chat reste longtemps au plus mal avant de mourir.
+• Faim : 100 -> 20 en 16 h, puis 20 -> 0 en 56 h. Croquettes +40, friandise +5. À 0 : il meurt.
+• Humeur : environ -4 par heure éveillé, et les chocs violents. Jouer (selon la durée), friandises (+12), caresses (aléatoires, voir F14b).
+• Énergie : -5 par heure éveillé (plus vite pour un chaton ou un senior), -15 pour 20 s de jeu. Le sommeil la remonte. À 0, il s'endort n'importe où.
+• Propreté : il fait une crotte par jour (entre 9 h et 19 h), visible au sol, qui sent (odeur, mouches). Tant qu'elle est là, la propreté baisse vite. On la ramasse en cliquant dessus (ou menu « Ramasser les crottes »). Brosser le chat la remonte aussi.
+• Santé : -0,4 par heure (il tombe malade au bout d'environ une semaine sans vétérinaire), plus vite si d'autres jauges sont au plus bas ou si son poids est mauvais. Le vétérinaire la remet à 100. Sous 30 : malade. À 0 : il meurt.
+• Sommeil : il dort de 22 h à 8 h. N'importe quelle action le réveille ; la nuit, il se rendort au bout de 15 min.
+Sans aucun soin, le chat meurt de faim au bout de 3 jours.
+
+Humeur affichée (paliers sur la jauge la plus basse, hors énergie)
+• 90 à 100 : heureux de fou (yeux plissés de joie, grand sourire, cœurs, bonds, courses folles).
+• 70 à 89 : heureux (sourire, queue qui remue).
+• 50 à 69 : sourit simplement.
+• 30 à 49 : fait la gueule (paupières mi-closes, sourcils froncés, oreilles en arrière).
+• 15 à 29 : dramatique (grands yeux larmoyants, larmes, il s'effondre théâtralement).
+• 1 à 14 : sur le point de mourir, si c'est la faim ou la santé (couché, pâle, respire à peine). Pour les autres jauges, il reste dramatique.
+• 0 : mort, si c'est la faim ou la santé.
+Les besoins ont aussi leurs propres animations : babines et ventre qui gargouille (faim), paupières lourdes et bâillements (fatigue), taches, odeur et mouches (sale), teint verdâtre, thermomètre et frissons (malade).
+
+Cycle de vie
+F10 · P1 · Fait — On adopte un chaton : à la première ouverture, on choisit son nom, sa robe, son caractère et le côté où se trouve le PC de l'ami.
+F10b · P1 · Fait — Caractère (choisi une fois, à l'adoption ; demandé une fois pour un chat déjà adopté) : Câlin (adore les caresses, vient s'asseoir près de toi), Joueur (s'ennuie vite, le jeu lui fait plus plaisir, plus de folies), Paresseux (se fatigue moins vite mais le jeu le fatigue, fait la sieste), Gourmand (a faim plus vite, fond pour les friandises, grossit plus facilement), Timide (se méfie des caresses sauf s'il est de très bonne humeur, adore être brossé, ne chasse pas le curseur).
+F10c · P2 · Fait — Il réclame : quand il a faim (plus tôt s'il est gourmand), il va à son coin repas près du pouf, pose sa gamelle vide, la tapote en te regardant ; quand il s'ennuie, il vient s'asseoir près du curseur avec une icône de balle. Les repas se font à son coin repas.
+F10d · P2 · Fait — Saisons et météo (sans paquet en plus) : bonnet l'hiver ou quand il fait froid, fleur à l'oreille au printemps, feuilles qui tombent en automne. Si on indique sa ville (facultatif), la météo vient d'Open-Meteo (gratuit, sans clé, seul le nom de la ville est envoyé) : il fait plus de siestes quand il pleut, des flocons tombent quand il neige, il se couche et halète quand il fait très chaud.
+F11 · P2 · Fait — Il grandit : chaton (10 premiers jours : un peu plus de la moitié de la taille d'un adulte, très grosse tête, joueur), adulte, puis senior (après 90 jours, plus lent, dort plus).
+F11b · P2 · Fait — Poids : un repas normal fait prendre un peu, manger sans avoir faim et les friandises font grossir, jouer fait maigrir, avoir très faim fait maigrir. Le maître modèle garde un poids idéal. Trop gros ou trop maigre, sa santé baisse plus vite ; trop gros, il est plus lent et saute moins. Le corps s'élargit à l'écran.
+F12 · P2 · Fait — S'il est négligé, il meurt (faim ou santé à 0) : il devient un petit fantôme qui s'envole, puis une tombe apparaît. Clic droit sur la tombe : adopter un nouveau chaton (l'ancien est gardé dans un fichier à part).
+F12b · P2 · Fait — Pension : on peut le mettre en pension pour ne pas avoir à s'en occuper. Le temps est figé pour lui ; il revient en pleine forme.
+F13 · P1 · Fait — L'état est sauvegardé en local toutes les minutes et à la fermeture.
+
+Interactions
+F14 · P1 · Fait — Clic droit sur le chat (ou sur l'icône de notification) : Nourrir (croquettes, friandise), Jouer, Caresser, Nettoyer la litière, Dormir/Réveiller, Soigner, Statistiques, Pension, côté de l'ami, Quitter.
+F14b · P1 · Fait — Caresses interactives : on le caresse en passant doucement la souris sur lui (ou menu « Caresser », la souris devient une main). Il adore (il tend la tête vers la main, se penche, suit la main, ronronne, cœurs ; l'humeur monte tant qu'on continue, 15 s au plus), c'est bof (il détourne la tête et s'en va), ou il déteste (il crache, donne un coup de patte et recule).
+F14c · P1 · Fait — Brossage interactif (menu « Brosser ») : la souris devient une brosse ; on la passe sur son pelage, des touffes de poils s'envolent, il ronronne ; humeur et propreté montent.
+F14d · P1 · Fait — Tous les soins se voient : repas (gamelles d'eau et de croquettes : il boit puis mange, l'eau baisse, les croquettes disparaissent), friandise (elle tombe, il la guette et la rattrape), vétérinaire (trousse, cachet, grimace puis soulagement), crotte (il s'accroupit, gratte le sol), ramassage (la crotte s'envole).
+F15 · P1 · Fait — Un panneau affiche les jauges, le stade, le caractère, l'âge, le poids et les 5 dernières actions.
+F16 · P1 · Fait — Des bulles avec une icône (jamais de texte) indiquent ses besoins et ses réactions.
+F17 · P1 · Fait — Jeux (l'humeur monte selon le temps de jeu effectif : 20 s = +100 ; l'énergie et le poids baissent) :
+   • Balle : on lance la balle à la souris, il court, saute pour l'attraper et la rapporte.
+   • Ficelle : la souris devient une canne avec un jouet au bout ; il le guette, le poursuit et saute pour l'attraper.
+   • Tout seul : il joue 20 s avec une souris en peluche (rapporte moitié moins d'humeur).
+
+Multi-écran et voyage chez un ami
+F26 · P1 · Fait — Les écrans forment une rangée logique, quelle que soit leur disposition dans Windows (ex. écrans l'un sur l'autre) : le côté de l'ami mène chez l'ami, l'autre côté mène à mes autres écrans. Seul un lancer fait changer d'écran ; quand il se promène seul ou pendant un jeu, les bords sont des murs.
+F19 · P1 · Fait — Les apps du même réseau local se trouvent toutes seules (annonce UDP en broadcast, pas de serveur à héberger) ; chacune choisit un pseudo et voit la liste des amis en ligne (menu Ami).
+F20 · P1 · Fait — Quand on lance le chat par le bord de l'ami, il part chez lui (l'ami choisi dans le menu, sinon le premier en ligne). Chez moi, une pancarte indique où il est.
+F21 · P1 · Fait — Chez l'ami, il entre par le bord de l'ami avec son nom, son apparence, une icône d'arrivée et une étiquette « Minou · le chat de Sam ».
+F22 · P2 · Fait — L'invité peut être caressé et nourri (clic droit) ; les soins sont envoyés au propriétaire, ses jauges restent les siennes.
+F23 · P1 · Fait — Il rentre chez lui si l'ami le relance par le bord d'où il est venu, si l'ami le renvoie (menu), après 10 min, ou si son propriétaire le rappelle (« Faire revenir »).
+F24 · P1 · Fait — Si personne n'est en ligne, il rebondit au bord (icône « ? »). Si l'app de l'ami se ferme ou si le réseau coupe pendant la visite, il revient tout seul chez lui ; si c'est l'app du propriétaire qui se ferme, l'ami le voit repartir. Il n'est jamais perdu.
+F25 · P2 · Fait (partiel) — Chacun peut refuser toutes les visites (menu Ami > Accepter les visites). À faire : n'accepter que certains amis.
+F26b · P1 · Fait — Le chat invité peut lui aussi passer sur les autres écrans de l'ami (sa fenêtre le suit), comme le chat de la maison.
+F27 · P1 · Fait — Pendant une visite, les deux chats interagissent d'eux-mêmes : ils se saluent (bisou de nez), se courent après (l'un poursuit, l'autre s'enfuit), se blottissent l'un contre l'autre et dorment ensemble.
+F28 · P1 · Fait — Dès qu'un ami est en ligne, tous les bords extérieurs mènent chez lui (un mauvais réglage du côté de l'ami ne bloque plus la visite).
+F29 · P1 · Fait — Découverte robuste : annonce sur chaque carte réseau, réponse directe à l'ami, pseudo par défaut, et ajout d'un ami par son adresse IP en secours.
+
+Exigences non fonctionnelles
+• Performance : moins de 2 % de CPU au repos, moins de 200 Mo de RAM, animation à 60 images/s. Animations en CSS et SVG natifs, sans librairie.
+• Discrétion : le chat ne vole jamais le focus clavier et ne bloque aucun clic hors de lui (exception : le jeu de la ficelle, qu'on arrête avec clic droit ou Échap).
+• Fiabilité : aucune perte d'état en cas de crash : sauvegarde régulière et écriture atomique du fichier. Une sauvegarde abîmée est mise de côté, jamais écrasée. Les anciennes versions de sauvegarde sont migrées.
+• Sécurité : contextIsolation activé, aucun accès Node dans la page, politique de sécurité du contenu stricte ; les messages des pages et du réseau sont vérifiés (taille, champs).
+• Vie privée : seuls le pseudo et l'état du chat transitent sur le réseau.
+• Installation : un installateur .exe signé ou non, sans droits administrateur.
+• Langue : interface en français.
+
+Architecture technique
+L'app est une application Electron en JavaScript.
+• Processus principal (main.js) : une fenêtre transparente par écran, passage du chat d'un écran à l'autre, icône de notification, menus, sauvegarde, réseau.
+• Preload (preload.js) : pont sécurisé entre la page et le processus principal (contextBridge).
+• Page du chat (index.html, renderer.js) : physique, comportement autonome, jeux, animations, bulles d'icônes, panneau.
+• Dessin (cat-art.js, cat.css) : le chat en SVG (3 corps selon la pose, une tête expressive), les icônes, toutes les animations. preview.html montre toutes les poses et expressions.
+• Moteur Tamagotchi (engine.js) : jauges, poids, croissance, rattrapage du temps hors ligne. Module JS pur, testé seul (engine.test.js, npm test).
+• Sauvegarde : cat.json et settings.json dans app.getPath('userData').
+• Réseau (lan.js) : découverte des amis en broadcast UDP (port 41234) et messages en HTTP sur un port libre annoncé, sans serveur central. Testé seul (lan.test.js). Une fenêtre séparée affiche chaque chat invité.
+• Pare-feu : au premier lancement, Windows demande d'autoriser l'app sur les réseaux privés ; il faut accepter, sinon les amis ne se voient pas.
+• Packaging : electron-builder (installateur .exe).
+• Mises à jour (updater.js, sans paquet) : au démarrage puis toutes les 6 h, l'app demande à GitHub la dernière version publiée (Releases) ; si elle est plus récente, « Mettre à jour » télécharge l'installateur et relance l'app (sauvegarde conservée).
+• Hébergement : code et versions sur GitHub (gratuit, dépôt public).
+Messages échangés entre amis :
+• annonce (UDP) : identifiant, pseudo et port, toutes les 2 s. Un ami disparaît après 7 s sans annonce.
+• travel : le chat arrive (apparence, hauteur, vitesse). L'ami peut refuser.
+• care : un soin donné par l'ami (caresse, croquettes, friandise) ; le propriétaire l'applique et renvoie l'apparence à jour.
+• status : l'ami prend des nouvelles toutes les 10 s.
+• return : le chat rentre chez son propriétaire.
+• recall : le propriétaire rappelle son chat.
+Seuls le pseudo et l'apparence du chat transitent ; tout ce qui arrive est vérifié (taille max. 16 Ko, champs, valeurs).
+
+Planning par versions
+Le projet avance par petites versions jouables, chacune avec son critère d'acceptation.
+1. v0.1 — Le chat qu'on lance (fait) : F1, F2, F6, F7.
+2. v0.2 — Tamagotchi (fait) : jauges, menu clic droit, bulles d'icônes, sauvegarde, mort et pension (F10, F12, F12b, F13–F16). Sans soins, il meurt de faim en 3 jours.
+3. v0.3 — Vie autonome (fait) : comportement, animations, jeux, croissance, poids, icône de notification, multi-écran (F3, F3b, F4, F8, F11, F11b, F14b, F17, F26).
+4. v0.4 — Voyage (fait) : réseau local et visites (F19–F25). Lancé par le bord de l'ami, le chat apparaît chez lui en moins d'1 seconde, puis rentre.
+5. v1.0 — Version installable (en cours) : installateur .exe sans droits administrateur (fait : npm run dist -> dist/Tamagotchi-Desktop-Setup-x.y.z.exe). À faire : lancement au démarrage de Windows (F5), visites réservées à certains amis (F25).
+6. v0.5 — Vie quotidienne (fait, pas encore dans l'installateur) : caractère, réclamations, folie 1x/heure, saisons et météo, invité multi-écran, mises à jour depuis GitHub, historique limité à 5. Et aussi : crotte, brossage, soins visibles, caresses interactives, pouf, chats qui interagissent, animation articulée, chaton plus petit (F3c, F3d, F14b–F14d, F27–F29).
+7. À faire : mise en ligne sur GitHub (compte et dépôt à créer). À discuter : reproduction.
+8. Bonus : peur de la souris (F9).

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+<link rel="stylesheet" href="cat.css">
+<style>
+  html, body { margin: 0; background: transparent; overflow: hidden; user-select: none; font-family: "Segoe UI", sans-serif; }
+
+  #zzz { position: absolute; font: bold 16px "Segoe UI", sans-serif; color: #5a6ab0; display: none; pointer-events: none; }
+  #zzz span { display: inline-block; animation: float 2.4s ease-in-out infinite; opacity: 0; }
+  #zzz span:nth-child(2) { animation-delay: .8s; font-size: 13px; }
+  #zzz span:nth-child(3) { animation-delay: 1.6s; font-size: 10px; }
+  @keyframes float { 0% { transform: translateY(0); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(-22px); opacity: 0; } }
+
+  /* ================= Tombe et pension ================= */
+  #grave { position: absolute; width: 90px; height: 100px; display: none; cursor: context-menu; }
+  #grave.show { display: block; animation: rise .8s ease-out; }
+  @keyframes rise { from { transform: translateY(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+  #pension {
+    position: absolute; display: none; padding: 6px 12px; border-radius: 12px; cursor: context-menu;
+    background: #fffaf3; border: 1.5px solid #c9a978; box-shadow: 0 3px 10px rgba(0,0,0,.18); font-size: 12.5px; color: #4a3b2c;
+  }
+  #pension.show { display: block; animation: rise .6s ease-out; }
+
+
+  /* ================= Panneaux ================= */
+  .card {
+    position: absolute; background: #fffaf3; border: 1.5px solid #c9a978; border-radius: 14px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.25); color: #2a2a2a; font-size: 13px;
+  }
+  #setup { left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 20px 24px; width: 300px; display: none; }
+  #setup h2 { margin: 0 0 12px; font-size: 18px; }
+  #setup label, #setup .label { display: block; margin: 12px 0 6px; font-weight: 600; }
+  #setup input { width: 100%; box-sizing: border-box; padding: 7px 9px; font-size: 14px; border: 2px solid #ddd; border-radius: 8px; }
+  #setup input:focus { outline: none; border-color: #f2a65e; }
+  #swatches { display: flex; gap: 8px; }
+  .swatch { width: 34px; height: 34px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); }
+  .swatch.selected { border-color: #5a4a3e; }
+  #sides { display: flex; gap: 6px; }
+  #sides button { flex: 1; padding: 7px 4px; border: 2px solid #ddd; border-radius: 8px; background: #fff; cursor: pointer; font-size: 12.5px; }
+  #sides button.selected { border-color: #5a4a3e; background: #fde8d0; font-weight: 600; }
+  #setup .hint { color: #777; font-size: 12px; margin-top: 5px; }
+  #adopt { margin-top: 16px; width: 100%; padding: 9px; font-size: 14px; font-weight: 600; border: 0; border-radius: 8px; background: #f2a65e; color: #fff; cursor: pointer; }
+  #adopt:disabled { background: #ccc; cursor: default; }
+
+  #panel { width: 250px; padding: 14px 16px; display: none; }
+  #panel h3 { margin: 0; font-size: 16px; }
+  #panel .sub { color: #777; margin: 2px 0 10px; }
+  #panel .close { position: absolute; right: 10px; top: 6px; border: 0; background: none; font-size: 18px; cursor: pointer; color: #555; }
+  .gauge { display: grid; grid-template-columns: 70px 1fr 28px; align-items: center; gap: 8px; margin: 5px 0; }
+  .bar { height: 9px; background: #eee; border-radius: 5px; overflow: hidden; }
+  .bar div { height: 100%; border-radius: 5px; transition: width .4s; }
+  .gauge .val { text-align: right; color: #666; font-variant-numeric: tabular-nums; }
+  #status { margin: 8px 0 4px; font-weight: 600; }
+  #history { margin: 6px 0 0; padding: 0; list-style: none; max-height: 130px; overflow: auto; color: #555; font-size: 12px; }
+  #history li { margin: 3px 0; }
+  #history time { color: #999; margin-right: 6px; }
+
+  /* ================= Jeux ================= */
+  #ball {
+    position: absolute; width: 22px; height: 22px; border-radius: 50%; display: none; cursor: grab;
+    background: radial-gradient(circle at 35% 30%, #ff9a9a, #e53935 55%, #a31515);
+    box-shadow: 0 2px 3px rgba(0,0,0,.25);
+  }
+  #ball::after { content: ''; position: absolute; inset: 9px -1px; border-top: 2px solid #fff; border-radius: 50%; opacity: .8; }
+  #wand { position: absolute; inset: 0; width: 100%; height: 100%; display: none; pointer-events: none; overflow: visible; }
+  body.wand-mode, body.wand-mode * { cursor: none !important; }
+  #toy-mouse { position: absolute; width: 30px; height: 18px; display: none; pointer-events: none; }
+  #game-hint {
+    position: absolute; left: 50%; top: 14px; transform: translateX(-50%); display: none; pointer-events: none;
+    background: rgba(40,30,20,.78); color: #fff; padding: 5px 12px; border-radius: 10px; font-size: 12.5px;
+  }
+  /* ================= Pseudo et étiquette de l'invité ================= */
+  #nick-card { left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 20px 24px; width: 290px; display: none; }
+  #nick-card h2 { margin: 0 0 6px; font-size: 18px; }
+  #nick-card .hint { color: #777; font-size: 12px; margin-bottom: 10px; }
+  #nick-card input { width: 100%; box-sizing: border-box; padding: 7px 9px; font-size: 14px; border: 2px solid #ddd; border-radius: 8px; }
+  #nick-card .row { display: flex; gap: 8px; margin-top: 14px; }
+  #nick-card button { flex: 1; padding: 9px; font-size: 14px; font-weight: 600; border: 0; border-radius: 8px; background: #f2a65e; color: #fff; cursor: pointer; }
+  #nick-card button.ghost { background: #eee; color: #555; }
+  #nick-card button:disabled { background: #ccc; }
+  #tag {
+    position: absolute; display: none; pointer-events: none; white-space: nowrap; font-size: 11.5px; color: #5a4636;
+    background: rgba(255,250,243,.9); border-radius: 8px; padding: 1px 7px; box-shadow: 0 1px 4px rgba(0,0,0,.15);
+  }
+  /* ================= Objets ================= */
+  #pouf { position: absolute; display: none; width: 120px; height: 44px; cursor: grab; }
+  .prop { position: absolute; opacity: 0; pointer-events: none; transition: opacity .4s; z-index: 2; transform-origin: 50% 100%; }
+  #cat { z-index: 1; }
+  .prop.show { opacity: 1; }
+  #water .level { transform-box: fill-box; transform-origin: 50% 100%; transition: transform 2.4s linear; }
+  #water.empty .level { transform: scale(.7, .5) translateY(3px); }
+  #water.busy .ripple { animation: ripple .4s ease-in-out infinite; }
+  @keyframes ripple { 50% { transform: translateX(1.5px); opacity: .4; } }
+  #food .k { transition: opacity .25s; }
+  #food.busy .k { animation: kibble 3s forwards; }
+  #food.busy .k0 { animation-delay: 0.00s; }
+  #food.busy .k1 { animation-delay: 0.25s; }
+  #food.busy .k2 { animation-delay: 0.50s; }
+  #food.busy .k3 { animation-delay: 0.75s; }
+  #food.busy .k4 { animation-delay: 1.00s; }
+  #food.busy .k5 { animation-delay: 1.25s; }
+  #food.busy .k6 { animation-delay: 1.50s; }
+  #food.busy .k7 { animation-delay: 1.75s; }
+  #food.busy .k8 { animation-delay: 2.00s; }
+  #food.busy .k9 { animation-delay: 2.25s; }
+  @keyframes kibble { to { opacity: 0; } }
+  #food.empty .k { opacity: 0; }
+  #treat { position: absolute; display: none; pointer-events: none; }
+  #pill { position: absolute; display: none; pointer-events: none; }
+  #pill.fly { display: block; animation: pill .6s ease-in forwards; }
+  @keyframes pill { from { transform: translate(var(--fx), var(--fy)) rotate(0); } to { transform: translate(0, 0) rotate(540deg); opacity: .2; } }
+  .poop { position: absolute; width: 30px; height: 30px; cursor: pointer; transition: transform .2s; }
+  .poop:hover { transform: scale(1.15); }
+  .poop.pending { display: none; }
+  .poop.scooped { animation: scoop .5s ease-in forwards; pointer-events: none; }
+  @keyframes scoop { 30% { transform: translateY(-14px) scale(1.1); } to { transform: translateY(-40px) scale(.2); opacity: 0; } }
+  .poop .stinkp path { animation: stinkp 2.2s ease-in-out infinite; opacity: 0; }
+  .poop .stinkp path:nth-child(2) { animation-delay: .7s; } .poop .stinkp path:nth-child(3) { animation-delay: 1.4s; }
+  @keyframes stinkp { 0% { transform: translateY(5px); opacity: 0; } 40% { opacity: .9; } 100% { transform: translateY(-6px); opacity: 0; } }
+  #fx-layer { position: absolute; inset: 0; pointer-events: none; }
+  .tuft { position: absolute; animation: tuft 1.2s ease-out forwards; }
+  @keyframes tuft { to { transform: translate(var(--dx), -40px) rotate(160deg); opacity: 0; } }
+  .sparkle-fx { position: absolute; animation: sparkle .9s ease-out forwards; }
+  @keyframes sparkle { from { transform: scale(.3); } 50% { transform: scale(1.3); } to { transform: scale(.6) translateY(-20px); opacity: 0; } }
+  /* Brosse et main : elles remplacent le curseur */
+  #brush-cursor, #hand-cursor { position: absolute; display: none; pointer-events: none; z-index: 10; }
+  body.brush-mode, body.brush-mode *, body.hand-mode, body.hand-mode * { cursor: none !important; }
+  #persos { display: flex; flex-wrap: wrap; gap: 6px; }
+  #persos button { padding: 6px 9px; border: 2px solid #ddd; border-radius: 16px; background: #fff; cursor: pointer; font-size: 12.5px; }
+  #persos button.selected { border-color: #5a4a3e; background: #fde8d0; font-weight: 600; }
+  /* Choisir seulement le caractère (chat déjà adopté) */
+  #setup.perso-only > :not(h2):not(.perso-label):not(#persos):not(.perso-desc):not(#adopt) { display: none; }
+  .fall { position: absolute; pointer-events: none; animation: fall var(--t, 5s) linear forwards; }
+  @keyframes fall { to { transform: translate(var(--dx, 40px), var(--dy, 300px)) rotate(var(--rot, 360deg)); opacity: 0; } }
+</style>
+</head>
+<body>
+  <div id="bubble" class="icon-bubble"></div>
+  <div id="zzz"><span>Z</span><span>z</span><span>z</span></div>
+  <div id="pension" class="hit"></div>
+  <div id="game-hint"></div>
+  <div id="tag"></div>
+
+  <!-- Objets : pouf, gamelles, crottes, friandise, véto, brosse, main -->
+  <div id="pouf" class="hit" title="Son pouf (tu peux le déplacer)"></div>
+  <div id="poops"></div>
+  <div id="water" class="prop"></div>
+  <div id="food" class="prop"></div>
+  <div id="vet" class="prop"></div>
+  <div id="pill"></div>
+  <div id="treat"></div>
+  <div id="fx-layer"></div>
+
+  <div id="cat" class="cat hit pose-sit" data-eyes="open" data-lids="none" data-brows="none" data-mouth="smile"></div>
+
+  <div id="brush-cursor"></div>
+  <div id="hand-cursor"></div>
+
+  <!-- Jeux -->
+  <div id="ball" class="hit" title="Attrape la balle et lance-la !"></div>
+  <svg id="wand">
+    <path id="wand-stick" d="" stroke="#8b5a2b" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <path id="wand-string" d="" stroke="#555" stroke-width="1.4" fill="none"/>
+    <g id="wand-toy">
+      <path d="M0 0 C-6 6 -8 16 -3 24 C0 16 1 8 0 0 Z" fill="#ff7eb6"/>
+      <path d="M0 0 C6 6 8 16 3 24 C0 16 -1 8 0 0 Z" fill="#8fd3ff"/>
+      <path d="M0 0 C-2 8 -1 18 0 28 C1 18 2 8 0 0 Z" fill="#ffd54f"/>
+      <circle r="3" fill="#ff5252"/>
+    </g>
+  </svg>
+  <svg id="toy-mouse" viewBox="0 0 30 18">
+    <path d="M4 12 C-2 12 -2 4 3 6" stroke="#888" stroke-width="1.2" fill="none"/>
+    <ellipse cx="15" cy="11" rx="11" ry="6.5" fill="#b0b6c0" stroke="#7d8592" stroke-width="1"/>
+    <circle cx="23" cy="5.5" r="3.2" fill="#c9ced6" stroke="#7d8592" stroke-width="1"/>
+    <circle cx="25" cy="10" r="1" fill="#333"/><circle cx="27.4" cy="11.6" r="1.1" fill="#ff8fa3"/>
+  </svg>
+
+  <!-- Tombe -->
+  <div id="grave" class="hit">
+    <svg viewBox="0 0 90 100" width="90" height="100">
+      <ellipse cx="45" cy="96" rx="40" ry="5" fill="#6b8e4e" opacity=".8"/>
+      <path d="M14 96 V40 Q14 12 45 12 Q76 12 76 40 V96 Z" fill="#b8bcc4" stroke="#3b2a20" stroke-width="2.4"/>
+      <path d="M20 92 V42 Q20 20 45 19" fill="none" stroke="#d9dce1" stroke-width="2.4" stroke-linecap="round"/>
+      <path d="M45 26 V40 M39 31 H51" stroke="#6d717a" stroke-width="2.6" stroke-linecap="round"/>
+      <text id="g-name" x="45" y="58" text-anchor="middle" font-size="11" font-weight="700" fill="#3b3f47" font-family="Segoe UI, sans-serif"></text>
+      <text id="g-age" x="45" y="72" text-anchor="middle" font-size="8" fill="#555a63" font-family="Segoe UI, sans-serif"></text>
+      <g transform="translate(10 88)"><circle r="3.5" fill="#ff8fa3"/><circle r="1.4" fill="#ffd54f"/></g>
+      <g transform="translate(80 90)"><circle r="3" fill="#9fc5ff"/><circle r="1.2" fill="#ffd54f"/></g>
+    </svg>
+  </div>
+
+  <div id="setup" class="card">
+    <h2>Un chaton arrive !</h2>
+    <label for="name">Comment s'appelle-t-il ?</label>
+    <input id="name" maxlength="20" placeholder="Ex. Moustache" autocomplete="off">
+    <span class="label">Sa robe</span>
+    <div id="swatches"></div>
+    <span class="label perso-label">Son caractère</span>
+    <div id="persos"></div>
+    <div class="hint perso-desc" id="perso-desc">&nbsp;</div>
+    <span class="label">Où est le PC de ton ami, par rapport à toi ?</span>
+    <div id="sides">
+      <button data-side="left">⬅ À gauche</button>
+      <button data-side="right">À droite ➡</button>
+      <button data-side="none">Pas d'ami</button>
+    </div>
+    <div class="hint">Lancé de ce côté, ton chaton ira chez lui. De l'autre côté, il passe sur ton autre écran.</div>
+    <button id="adopt" disabled>Adopter</button>
+  </div>
+
+  <div id="nick-card" class="card">
+    <h2>Ton pseudo</h2>
+    <div class="hint">Tes amis sur le même réseau le verront quand ton chat leur rendra visite.</div>
+    <input id="nick" maxlength="20" placeholder="Ex. Sam" autocomplete="off">
+    <div class="row"><button id="nick-later" class="ghost">Plus tard</button><button id="nick-ok">OK</button></div>
+  </div>
+
+  <div id="panel" class="card hit">
+    <button class="close" title="Fermer">×</button>
+    <h3 id="p-name"></h3>
+    <div class="sub" id="p-age"></div>
+    <div id="gauges"></div>
+    <div id="status"></div>
+    <ul id="history"></ul>
+  </div>
+
+  <script src="cat-art.js"></script>
+  <script src="rig.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

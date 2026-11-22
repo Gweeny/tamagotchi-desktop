@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Aperçu du chat</title>
+<link rel="stylesheet" href="cat.css">
+<style>
+  body { margin: 0; padding: 16px; font-family: "Segoe UI", sans-serif; background: #f6ece4; color: #2a2a2a; }
+  h2 { font-size: 15px; margin: 18px 0 6px; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cell { position: relative; width: 160px; height: 145px; background: #fffaf6; border-radius: 12px; }
+  .cell .cat { left: 5px; top: 10px; }
+  .cell span { position: absolute; bottom: 6px; left: 0; right: 0; text-align: center; font-size: 12px; color: #6b5a50; }
+  .icons { display: flex; flex-wrap: wrap; gap: 10px; }
+  .icons div { background: #fff; border-radius: 50%; padding: 6px; line-height: 0; box-shadow: 0 2px 6px rgba(0,0,0,.12); }
+</style>
+</head>
+<body>
+  <p>Aperçu de toutes les poses et expressions (ouvre ce fichier dans un navigateur, rien d'autre à lancer).</p>
+  <div id="out"></div>
+  <script>
+    const FACE = { eyes: 'open', lids: 'none', brows: 'none', mouth: 'smile' };
+    const COLORS = {
+      siamois: { fur: '#f3e3cc', light: '#fff8ee', point: '#5a3d2e', mask: 0.9, eye: '#6fb6ec' },
+      roux:    { fur: '#f6b26e', light: '#fff3e4', point: '#c9662a', mask: 0.6, eye: '#7cc36a' },
+      gris:    { fur: '#c3c9d3', light: '#f6f8fb', point: '#626b7a', mask: 0.65, eye: '#f2b33d' },
+      noir:    { fur: '#4f4f5c', light: '#80808f', point: '#1f1f27', mask: 0.7, eye: '#e8c547' },
+      blanc:   { fur: '#fdfaf5', light: '#ffffff', point: '#d6c7b6', mask: 0.6, eye: '#5aa9e6' },
+      creme:   { fur: '#f0d9b2', light: '#fdf6ea', point: '#a87d45', mask: 0.65, eye: '#4fa3a5' }
+    };
+    const groups = {
+      'Poses': [
+        ['Assis', 'pose-sit tier-smile'], ['Debout', 'pose-stand'], ['Marche', 'pose-walk'], ['Court', 'pose-run'],
+        ['Saute', 'pose-jump'], ['Retombe', 'pose-jump falling'], ['Prêt à bondir', 'pose-crouch'], ['S\'étire', 'pose-stretch', { eyes: 'closed', mouth: 'yawn' }],
+        ['Sur le dos', 'pose-roll tier-ecstatic', { eyes: 'joy', mouth: 'big' }], ['Pétrit', 'pose-knead purr', { eyes: 'joy' }],
+        ['Toilette', 'pose-groom', { eyes: 'closed' }], ['Mange', 'pose-eat', { eyes: 'closed' }],
+        ['Couché', 'pose-loaf'], ['Dort', 'pose-sleep', { eyes: 'closed' }], ['Vers la gauche', 'pose-walk face-left']
+      ],
+      'Regard (suit la souris)': [
+        ['Regarde à gauche', 'pose-sit', {}, null, '--lx:-2.2;--ly:.4;--tilt:-6'],
+        ['Regarde en haut', 'pose-sit', {}, null, '--lx:.3;--ly:-2.4;--tilt:3'],
+        ['Regarde à droite', 'pose-sit', {}, null, '--lx:2.2;--ly:1;--tilt:7']
+      ],
+      'Paliers d\'humeur': [
+        ['Heureux de fou (90+)', 'pose-sit tier-ecstatic', { eyes: 'joy', mouth: 'big' }],
+        ['Heureux (70+)', 'pose-sit tier-happy'],
+        ['Sourit (50+)', 'pose-sit tier-smile'],
+        ['Fait la gueule (30+)', 'pose-sit tier-grumpy', { lids: 'grumpy', brows: 'angry', mouth: 'flat' }],
+        ['Dramatique (15+)', 'pose-sit tier-dramatic big-pupils', { brows: 'sad', mouth: 'wail' }],
+        ['Mourant (< 15)', 'pose-loaf tier-dying', { lids: 'dying', brows: 'sad', mouth: 'sad' }]
+      ],
+      'Besoins et réactions': [
+        ['Fatigué', 'pose-sit', { lids: 'tired' }], ['Bâille', 'pose-sit', { eyes: 'closed', mouth: 'yawn' }],
+        ['Faim', 'pose-sit lick'], ['Sale', 'pose-sit dirty'],
+        ['Malade', 'pose-sit sick', { brows: 'sad', mouth: 'flat' }],
+        ['Adore les caresses', 'pose-sit love purr', { eyes: 'joy' }],
+        ['Déteste les caresses', 'pose-hiss', { brows: 'angry', mouth: 'hiss' }],
+        ['Surpris', 'pose-sit big-pupils', { mouth: 'o' }],
+        ['Étourdi', 'pose-sit', { eyes: 'x', mouth: 'sad' }]
+      ],
+      'Âge et poids': [
+        ['Chaton', 'pose-sit kitten tier-happy'], ['Adulte', 'pose-sit tier-happy'], ['Senior', 'pose-sit senior', { lids: 'tired' }],
+        ['Mince', 'pose-sit', {}, null, '--fatx:.88'], ['Dodu', 'pose-sit', {}, null, '--fatx:1.18'], ['Obèse (de profil)', 'pose-stand', {}, null, '--fatx:1.32']
+      ],
+      'Robes': Object.keys(COLORS).map(c => [c, 'pose-sit tier-happy', {}, c])
+    };
+    const out = document.getElementById('out');
+    for (const [title, items] of Object.entries(groups)) {
+      const h = document.createElement('h2'); h.textContent = title; out.append(h);
+      const row = document.createElement('div'); row.className = 'row'; out.append(row);
+      for (const [label, cls, face = {}, color, vars] of items) {
+        const cell = document.createElement('div'); cell.className = 'cell';
+        const cat = document.createElement('div'); cat.className = 'cat ' + cls;
+        Object.assign(cat.dataset, FACE, face);
+        cat.dataset.color = color || 'siamois';
+        if (vars) cat.style.cssText = vars;
+        const span = document.createElement('span'); span.textContent = label;
+        cell.append(cat, span); row.append(cell);
+      }
+    }
+    const h = document.createElement('h2'); h.textContent = 'Icônes de réaction (à la place du texte)'; out.append(h);
+    const icons = document.createElement('div'); icons.className = 'icons'; icons.id = 'icons'; out.append(icons);
+  </script>
+  <script src="cat-art.js"></script>
+  <script>
+    for (const el of document.querySelectorAll('.cat')) applyCatColors(el, COLORS[el.dataset.color]);
+    for (const [k, svg] of Object.entries(CAT_ICONS)) { const d = document.createElement('div'); d.title = k; d.innerHTML = svg; document.getElementById('icons').append(d); }
+  </script>
+</body>
+</html>
