@@ -224,7 +224,7 @@
 
   // ---- Objets autour du chat (dessinés en SVG, posés au sol ou suivant la souris) ----
   const PROPS = {
-    pouf: `<svg viewBox="0 0 120 44" width="120" height="44">
+    pouf: `<svg viewBox="0 0 120 44" width="160" height="59">
       <ellipse cx="60" cy="38" rx="56" ry="6" fill="#000" opacity=".12"/>
       <path d="M6 30 C4 16 20 8 60 8 C100 8 116 16 114 30 C112 40 94 42 60 42 C26 42 8 40 6 30 Z" fill="#f7b8c8"/>
       <path d="M14 27 C14 18 30 14 60 14 C90 14 106 18 106 27 C104 33 88 35 60 35 C32 35 16 33 14 27 Z" fill="#ffd9e3"/>

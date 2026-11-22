@@ -383,7 +383,7 @@ async function startVisit(sender, msg) {
   const visitId = crypto.randomUUID();
   const d = displayOf(sender);
   const r = await lan.send(peer.id, 'travel', {
-    visitId, cat: guestPayload(),
+    visitId, cat: guestPayload(), side: msg.side,
     y: d ? msg.y / d.bounds.height : 0.5, vx: msg.vx, vy: msg.vy
   });
   if (!r || !r.ok) return bounce();
@@ -456,7 +456,10 @@ async function guestCare(visitId, action) {
 const myNick = () => settings.nickname || os.hostname().slice(0, 20) || 'Ami';
 
 function startLan() {
-  lan = new Lan({ id: settings.id, nick: myNick() });
+  // Les profils de test (TAMA_PROFILE) peuvent utiliser leur propre canal réseau (TAMA_UDP_PORT)
+  // pour ne jamais voir les vraies apps du réseau, ni leur envoyer de chat
+  const testPort = PROFILE && /^\d{4,5}$/.test(process.env.TAMA_UDP_PORT || '') ? Number(process.env.TAMA_UDP_PORT) : undefined;
+  lan = new Lan({ id: settings.id, nick: myNick(), udpPort: testPort });
   for (const ip of settings.friendIps) lan.addManual(ip);
   lan.on('error', (e) => console.error('Réseau :', e.message));
 
@@ -468,7 +471,15 @@ function startLan() {
     for (const [id, g] of guests) if (g.ownerId === from.id) closeGuest(id); // un seul chat par ami
     const num = (x, d) => (Number.isFinite(x) ? x : d);
     // Il entre par mon bord « ami » (ou, à défaut, le côté opposé à sa sortie)
-    const side = settings.friendSide === 'left' || settings.friendSide === 'right' ? settings.friendSide : (num(body.vx, 0) > 0 ? 'left' : 'right');
+    // Son chat est sorti par sa gauche ? Alors cet ami est à MA droite (et inversement) : on corrige le réglage
+    // tout seul, pour que mon chat puisse lui aussi aller chez lui par le bon bord.
+    const inferred = body.side === 'left' ? 'right' : body.side === 'right' ? 'left' : null;
+    if (inferred && settings.friendSide !== inferred) {
+      setFriendSide(inferred);
+      sendToCat('notice', `${from.nick} est à ta ${inferred === 'left' ? 'gauche' : 'droite'} : réglage mis à jour`);
+    }
+    if (settings.friendId !== from.id) { settings.friendId = from.id; saveSettings(); }
+    const side = inferred || (settings.friendSide === 'left' || settings.friendSide === 'right' ? settings.friendSide : (num(body.vx, 0) > 0 ? 'left' : 'right'));
     openGuest(body.visitId, from.id, from.nick, v, { side, y: Math.max(0, Math.min(1, num(body.y, 0.5))), vx: num(body.vx, 0), vy: num(body.vy, 0) });
     return { ok: true };
   };
@@ -512,10 +523,7 @@ function startLan() {
 function setFriendSide(side) {
   settings.friendSide = side;
   saveSettings();
-  for (const d of screen.getAllDisplays()) {
-    const w = windows.get(d.id);
-    if (w) w.webContents.send('edges', screenInfo(d).edges);
-  }
+  sendEdges();
 }
 
 function friendMenu() {
@@ -788,6 +796,7 @@ ipcMain.on('pos', (e, p) => {
   const me = mateOf(e.sender);
   if (!me || ![p.x, p.y, p.cw, p.ch].every(Number.isFinite)) return;
   const pos = { id: me.id, x: p.x, y: p.y, cw: p.cw, ch: p.ch, faceLeft: !!p.faceLeft, pose: String(p.pose).slice(0, 12), asleep: !!p.asleep, onPouf: !!p.onPouf };
+  if (p.pouf && Number.isFinite(p.pouf.x) && Number.isFinite(p.pouf.w)) pos.pouf = { x: p.pouf.x, w: p.pouf.w };
   for (const m of screenMates(me.displayId)) if (m.id !== me.id) m.wc.send('others', [pos]);
 });
 ipcMain.on('social', (e, to, type) => {
@@ -837,6 +846,12 @@ app.whenReady().then(() => {
   setInterval(checkUpdate, 6 * 3600000);
   // Petit délai : sous Linux, la transparence a parfois besoin que le compositeur soit prêt
   setTimeout(buildWindows, process.platform === 'linux' ? 300 : 0);
+});
+
+// Une page plante (rare) : on note pourquoi, et on la recharge pour que le chat ne disparaisse pas
+app.on('render-process-gone', (_e, wc, details) => {
+  console.error('Page plantée :', details.reason, details.exitCode);
+  setTimeout(() => { if (!wc.isDestroyed()) wc.reload(); }, 1000);
 });
 
 // On relance l'app alors qu'elle tourne déjà : on fait venir le chat

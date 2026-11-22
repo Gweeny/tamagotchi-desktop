@@ -22,7 +22,8 @@ contextBridge.exposeInMainWorld('desk', {
   setPouf: (ratio) => ipcRenderer.send('set-pouf', Number(ratio)),
   pos: (p) => ipcRenderer.send('pos', {
     x: Number(p.x), y: Number(p.y), cw: Number(p.cw), ch: Number(p.ch), faceLeft: !!p.faceLeft,
-    pose: String(p.pose), asleep: !!p.asleep, onPouf: !!p.onPouf
+    pose: String(p.pose), asleep: !!p.asleep, onPouf: !!p.onPouf,
+    pouf: p.pouf ? { x: Number(p.pouf.x), w: Number(p.pouf.w) } : null
   }),
   social: (to, type) => ipcRenderer.send('social', String(to), String(type)),
   setNick: (nick) => ipcRenderer.send('set-nick', String(nick)),
@@ -38,6 +39,7 @@ contextBridge.exposeInMainWorld('desk', {
   onAskNick: (cb) => ipcRenderer.on('ask-nick', (_e, current) => cb(current)),
   onAskIp: (cb) => ipcRenderer.on('ask-ip', () => cb()),
   onBrush: (cb) => ipcRenderer.on('brush', () => cb()),
+  onNotice: (cb) => ipcRenderer.on('notice', (_e, text) => cb(text)),
   onRescreen: (cb) => ipcRenderer.on('rescreen', (_e, info) => cb(info)),
   onAskCity: (cb) => ipcRenderer.on('ask-city', (_e, current) => cb(current)),
   onWeather: (cb) => ipcRenderer.on('weather', (_e, wx) => cb(wx)),

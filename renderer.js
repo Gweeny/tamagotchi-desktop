@@ -14,7 +14,7 @@ const MAX_THROW = 4000;      // vitesse max d'un lancer (px/s)
 const WALK = 70, TROT = 180, RUN = 330; // vitesses (px/s, adulte)
 const NEED_BUBBLE_MS = 60000;
 const LOW = 30;              // en dessous, l'animation du besoin s'affiche
-const POUF_W = 120, POUF_LIFT = 16; // le pouf, et de combien le chat est surélevé quand il dort dessus
+const POUF_W = 160, POUF_H = 59, POUF_LIFT = 22; // le panier (assez grand pour deux), et de combien le chat est surélevé dessus
 const SIDE_POSES = ['stand', 'walk', 'run', 'jump', 'crouch', 'stretch', 'lean', 'scratch'];
 
 // Fenêtre d'un chat invité (le chat d'un ami en visite chez moi) ?
@@ -93,6 +93,7 @@ window.desk.onAnim(playAnim);
 window.desk.onGame((name) => (name ? startGame(name) : endGame(false)));
 window.desk.onBrush(() => startCare('brush', true));
 window.desk.onTogglePanel(togglePanel);
+window.desk.onNotice((text) => hint(String(text).slice(0, 120))); // petit message d'interface en haut de l'écran
 window.desk.onAskCity((current) => openPrompt({
   title: 'Ta ville (météo)', hint: 'Facultatif. Le nom de la ville est envoyé au service gratuit Open-Meteo pour connaître la météo (pluie, neige, chaleur).',
   placeholder: 'Ex. Lyon', value: current, maxLength: 60, ok: (v) => window.desk.setCity(v)
@@ -114,7 +115,9 @@ window.desk.onOthers((list) => {
   for (const o of list) others.set(o.id, { ...o, t: now });
 });
 window.desk.onSocial(({ from, type }) => {
-  if (type === 'chased' && canSocialize()) { // on lui court après : il s'enfuit
+  // On lui court après : il bondit (même s'il était blotti dans le panier) et s'enfuit
+  if (type === 'chased' && state && !state.asleep && !state.dead && !game && !care && !override) {
+    stopScript(); s.onPouf = false;
     activity = { name: 'flee', from, until: performance.now() + 2600 };
     icon('surprise', 900);
   }
@@ -269,13 +272,14 @@ function tick(now) {
   // Position partagée avec les autres chats de l'écran (visites)
   if (here && !s.gone && now - lastPos > 200) {
     lastPos = now;
-    window.desk.pos({ x: s.x, y: s.y, cw, ch, faceLeft: s.faceLeft, pose: shownPose, asleep: !!(state && state.asleep), onPouf: s.onPouf });
+    window.desk.pos({ x: s.x, y: s.y, cw, ch, faceLeft: s.faceLeft, pose: shownPose, asleep: !!(state && state.asleep), onPouf: s.onPouf,
+      pouf: home && !GUEST && poufX !== null ? { x: poufX, w: POUF_W } : null });
   }
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
 
-const groundY = () => floorY - (s.onPouf ? POUF_LIFT * K + 10 : 0);
+const groundY = () => floorY - (s.onPouf ? POUF_LIFT * (0.6 + 0.4 * K) : 0);
 
 function physics(dt) {
   s.vy += GRAVITY * dt;
@@ -352,6 +356,7 @@ const canSocialize = () => state && !state.asleep && !state.dead && !game && !ca
 function think(now) {
   if (!state || state.dead || state.boarding || override || game || (care && care.mode !== 'love')) return;
 
+  if (s.onPouf && Math.abs(s.vx) > 5) s.onPouf = false; // il descend du panier
   if (activity.name === 'script') { runScript(now); return; }
 
   // Endormi : il va dormir sur son pouf (ou contre un autre chat qui dort)
@@ -393,12 +398,12 @@ function think(now) {
     case 'crazy': crazyTick(now); return;
     case 'chase': case 'flee': {
       const o = others.get(activity.id || activity.from);
-      if (!o || now > activity.until) { nextActivity(now); return; }
+      if (!o || now > activity.until) { if (o) cuddle(); else nextActivity(now); return; } // puis retour au panier, ensemble
       const ox = o.x + o.cw / 2, me = s.x + cw / 2;
       const dir = activity.name === 'chase' ? Math.sign(ox - me) : -Math.sign(ox - me) || 1;
       s.vx = dir * RUN * 0.85 * speedK();
       if (activity.name === 'chase' && Math.abs(ox - me) < (cw + o.cw) * 0.35) { // rattrapé : petit bond joueur
-        hop(420, dir * 160); activity = { name: 'sit', until: now + 4000 };
+        hop(420, dir * 160); activity = { name: 'chase', id: activity.id, until: now + 900 }; // petit bond, puis retour au panier
       }
       return;
     }
@@ -435,8 +440,8 @@ function nextActivity(now) {
     dramatic: { loaf: 6, sit: 2, walk: 0.3 },
     dying: { loaf: 1 }
   }[tier] || { sit: 1 };
-  if (others.size && n.energy > 40 && ['ecstatic', 'happy', 'smile'].includes(tier)) w.chase = 1.2;
-  if (others.size) w.cuddle = 1;
+  if (others.size && n.energy > 30 && ['ecstatic', 'happy', 'smile', 'grumpy'].includes(tier)) w.chase = 1.5;
+  if (others.size) { w.cuddle = 4; if (w.walk) w.walk *= 0.4; if (w.crazy) w.crazy *= 0.5; }
   // Son quart d'heure de folie : 30 s à courir et sauter partout, au plus une fois par heure
   if (crazyAllowed() && n.energy > 40 && ['ecstatic', 'happy', 'smile'].includes(tier)) w.crazy = 0.5;
   if (n.energy < LOW) { w.loaf = (w.loaf || 0) + 4; if (w.chase) w.chase *= 0.15; }
@@ -457,7 +462,7 @@ function nextActivity(now) {
       if (mouse.inside && now - mouse.lastMove < 20000) { activity = { name: 'walk', target: clamp(mouse.x - cw / 2 + (mouse.x > catCenter() ? -60 : 60), 0, W - cw), until: now + 10000 }; break; }
       activity = { name: 'sit', until: now + rand(15000, 30000) }; break;
     case 'chase': { const id = [...others.keys()][0]; activity = { name, id, until: now + 3500 }; window.desk.social(id, 'chased'); break; }
-    case 'cuddle': cuddle([...others.entries()][0]); break;
+    case 'cuddle': cuddle(); break;
     case 'roll': activity = { name, until: now + rand(3000, 5000) }; break;
     case 'knead': activity = { name, until: now + rand(5000, 9000) }; break;
     case 'stretch': activity = { name, until: now + 1600 }; pulse('yawning', 1400); break;
@@ -593,31 +598,49 @@ function greet(id, o) {
   ]);
 }
 
-// Se blottir contre un autre chat (et dormir contre lui s'il dort)
-function cuddle(entry) {
-  if (!entry) { activity = { name: 'loaf', until: performance.now() + 30000 }; return; }
-  const [, o] = entry;
-  const side = (s.x + cw / 2) < (o.x + o.cw / 2) ? -1 : 1;
-  const x = clamp(o.x + o.cw / 2 + side * (o.cw * 0.32 + cw * 0.32) - cw / 2, 0, W - cw);
+// Le panier : le mien (écran maison) ou celui de l'autre chat (je suis invité chez lui)
+function sharedPouf() {
+  if (home && !GUEST && poufX !== null) return { x: poufX, w: POUF_W };
+  for (const o of others.values()) if (o.pouf) return o.pouf;
+  return null;
+}
+// Place dans le panier quand on est deux : le chat de la maison à gauche, l'invité à droite, tournés l'un vers l'autre
+function poufSlot(p) { return clamp(p.x + p.w / 2 + (GUEST ? 1 : -1) * p.w * 0.18 - cw / 2, 0, W - cw); }
+
+// Se blottir contre l'autre chat, dans le panier (ou à côté de lui s'il n'y a pas de panier)
+function cuddle() {
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const p = sharedPouf();
+  const o = [...others.values()][0];
+  if (!p && !o) { activity = { name: 'loaf', until: performance.now() + 30000 }; return; }
+  let x, faceLeft;
+  if (p && others.size) { x = poufSlot(p); faceLeft = !!GUEST; }
+  else {
+    const side = (s.x + cw / 2) < (o.x + o.cw / 2) ? -1 : 1;
+    x = clamp(o.x + o.cw / 2 + side * (o.cw * 0.32 + cw * 0.32) - cw / 2, 0, W - cw); faceLeft = side > 0;
+  }
   script([
     { walk: x },
-    { fn: () => { s.faceLeft = side > 0; } },
-    { pose: 'knead', ms: 2000, cls: ['purr'], face: { eyes: 'joy' } },
-    { pose: 'loaf', ms: 40000, face: { eyes: 'closed' } }
+    { fn: () => { if (p) s.onPouf = true; s.faceLeft = faceLeft; } },
+    { pose: 'knead', ms: 2200, cls: ['purr'], face: { eyes: 'joy' } },
+    { pose: 'loaf', ms: rand(35000, 70000), cls: ['purr'], face: { eyes: 'closed' } }
   ]);
 }
 
-// S'endormir : sur son pouf (écran maison), ou contre un autre chat qui dort
+// S'endormir : dans le panier (blotti contre l'autre chat s'il y en a un), sinon là où il est
 function goToSleep(now) {
-  const sleeper = [...others.values()].find(o => o.asleep);
-  let x = null;
-  if (sleeper) x = clamp(sleeper.x + (sleeper.x > s.x ? -1 : 1) * sleeper.cw * 0.55, 0, W - cw);
-  else if (home && poufX !== null) x = poufX + POUF_W / 2 - cw / 2;
-  if (x === null || Math.abs(x - s.x) < 8 && !(!sleeper && home)) { activity = { name: 'sleep' }; return; }
-  const onPouf = !sleeper && home;
+  const p = sharedPouf();
+  if (!p) { // pas de panier : contre l'autre chat s'il dort, sinon sur place
+    const sleeper = [...others.values()].find(o => o.asleep);
+    if (!sleeper) { activity = { name: 'sleep' }; return; }
+    const x = clamp(sleeper.x + (sleeper.x > s.x ? -1 : 1) * sleeper.cw * 0.55, 0, W - cw);
+    script([{ walk: x, slow: true }, { fn: () => { activity = { name: 'sleep' }; } }]);
+    return;
+  }
+  const x = others.size ? poufSlot(p) : p.x + p.w / 2 - cw / 2;
   script([
     { walk: x, slow: true },
-    { fn: () => { if (onPouf) { s.onPouf = true; s.y -= POUF_LIFT * K + 10; } } },
+    { fn: () => { s.onPouf = true; if (others.size) s.faceLeft = !!GUEST; } },
     { pose: 'knead', ms: 1600, face: { eyes: 'closed' }, cls: ['purr'] },
     { fn: () => { activity = { name: 'sleep' }; } }
   ]);
@@ -1161,7 +1184,7 @@ function placePouf(ratio, x) {
   poufX = x !== undefined ? clamp(x, 0, W - POUF_W) : clamp((Number.isFinite(ratio) ? ratio : 0.82) * W - POUF_W / 2, 0, W - POUF_W);
   poufEl.style.display = 'block';
   poufEl.style.left = poufX + 'px';
-  poufEl.style.top = (floorY - 44 + 4) + 'px';
+  poufEl.style.top = (floorY - POUF_H + 5) + 'px';
 }
 
 // =====================================================================
