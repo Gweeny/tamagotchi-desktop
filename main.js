@@ -162,9 +162,17 @@ function stopGame() {
 let update = null;      // { version, url, name, size } quand une nouvelle version existe
 let updateFile = null;  // installateur déjà téléchargé, prêt à installer
 let updating = false;
+// Demande à GitHub la toute dernière version publiée (jamais une version intermédiaire)
+async function fetchLatest() {
+  const u = await updater.checkForUpdate(updateRepo, app.getVersion());
+  update = u;
+  // Un installateur déjà téléchargé mais dépassé (une version plus récente est sortie entre-temps) ne sert plus
+  if (updateFile && (!u || updateFile.version !== u.version)) updateFile = null;
+  return u;
+}
 async function checkUpdate(manual = false) {
   try {
-    update = await updater.checkForUpdate(updateRepo, app.getVersion());
+    await fetchLatest();
     if (update && tray) tray.setToolTip(`Tamagotchi — nouvelle version ${update.version} disponible`);
     if (manual) sendToCat('notice', update ? `Nouvelle version ${update.version} disponible : clic droit > ✨ Mettre à jour` : `Tu as la dernière version (${app.getVersion()})`);
     if (update && settings.autoUpdate && app.isPackaged) prepareUpdate();
@@ -173,34 +181,48 @@ async function checkUpdate(manual = false) {
     if (manual) sendToCat('notice', 'Impossible de vérifier les mises à jour (pas de connexion ?)');
   }
 }
-// Téléchargement en arrière-plan
+// Téléchargement en arrière-plan (de la dernière version connue)
 async function prepareUpdate() {
   if (!update || updating || (updateFile && updateFile.version === update.version)) return;
   updating = true;
+  const target = update;
   try {
-    const file = await updater.download(update);
-    if (file) {
-      updateFile = { version: update.version, file };
-      if (tray) tray.setToolTip(`Tamagotchi — la version ${update.version} s'installera cette nuit (ou en quittant)`);
+    const file = await updater.download(target);
+    // Une version encore plus récente est sortie pendant le téléchargement : on recommencera avec elle
+    if (file && update && update.version === target.version) {
+      updateFile = { version: target.version, file };
+      if (tray) tray.setToolTip(`Tamagotchi — la version ${target.version} s'installera cette nuit (ou en quittant)`);
     }
   } catch (e) { console.error('Mise à jour :', e.message); }
   updating = false;
+  if (update && (!updateFile || updateFile.version !== update.version) && settings.autoUpdate) setTimeout(prepareUpdate, 1000);
 }
+// L'installateur prêt est-il bien celui de la dernière version connue ?
+const readyFile = () => (updateFile && update && updateFile.version === update.version ? updateFile : null);
 // Installer maintenant, sans fenêtre, puis relancer le chat
 function installNow() {
-  if (!updateFile) return false;
+  const f = readyFile();
+  if (!f) return false;
   saveCat();
-  updater.install(updateFile.file, { silent: true, relaunch: true });
+  updater.install(f.file, { silent: true, relaunch: true });
   updateFile = null;
   app.quit();
   return true;
 }
-// La nuit, quand il dort profondément, c'est le bon moment
-setInterval(() => { if (updateFile && settings.autoUpdate && cat && cat.asleep && cat.nightSleep && !currentGame && !guests.size && !visit) installNow(); }, 10 * 60000);
-// Bouton du menu : installer tout de suite
+// La nuit, quand il dort profondément, c'est le bon moment : on revérifie d'abord qu'il n'y a pas plus récent
+setInterval(async () => {
+  if (!updateFile || !settings.autoUpdate || !cat || !cat.asleep || !cat.nightSleep || currentGame || guests.size || visit) return;
+  try { await fetchLatest(); } catch { return; } // pas de connexion : on attendra
+  if (!installNow() && update) prepareUpdate();
+}, 10 * 60000);
+// Bouton du menu : installer tout de suite la toute dernière version (on redemande à GitHub au moment du clic)
 async function installUpdate() {
-  if (!update || updating) return;
-  if (updateFile && updateFile.version === update.version) { installNow(); return; }
+  if (updating) return;
+  updating = true;
+  try { await fetchLatest(); } catch (e) { console.error('Mise à jour :', e.message); }
+  updating = false;
+  if (!update) { sendToCat('notice', `Tu as la dernière version (${app.getVersion()})`); return; }
+  if (installNow()) return;
   updating = true;
   if (tray) tray.setToolTip(`Téléchargement de la version ${update.version}…`);
   try {
@@ -940,8 +962,8 @@ app.whenReady().then(() => {
   startLan();
   updateWeather();
   setInterval(updateWeather, WEATHER_MS);
-  setTimeout(checkUpdate, 15000);                 // nouvelle version ? au démarrage puis toutes les heures
-  setInterval(checkUpdate, 3600000);
+  setTimeout(checkUpdate, 15000);                 // nouvelle version ? au démarrage puis toutes les 30 min
+  setInterval(checkUpdate, 30 * 60000);
   // Petit délai : sous Linux, la transparence a parfois besoin que le compositeur soit prêt
   setTimeout(buildWindows, process.platform === 'linux' ? 300 : 0);
 });
@@ -958,7 +980,8 @@ app.on('second-instance', () => { if (cat) recallCat(); else showAll(); });
 app.on('before-quit', () => {
   if (cat) engine.update(cat, Date.now(), SPEED);
   saveCat();
-  if (updateFile && settings.autoUpdate) { updater.install(updateFile.file, { silent: true, relaunch: false }); updateFile = null; }
+  // En quittant : seulement l'installateur de la dernière version connue (jamais une version dépassée)
+  if (readyFile() && settings.autoUpdate) { updater.install(updateFile.file, { silent: true, relaunch: false }); updateFile = null; }
   // Les chats invités rentrent chez eux (on prévient sans attendre)
   for (const id of [...guests.keys()]) sendGuestHome(id);
   if (lan) lan.stop();

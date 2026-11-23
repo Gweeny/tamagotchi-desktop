@@ -23,7 +23,7 @@ async function checkForUpdate(repo, currentVersion) {
     headers: { 'User-Agent': 'tamagotchi-desktop', Accept: 'application/vnd.github+json' },
     signal: AbortSignal.timeout(10000)
   });
-  if (!r.ok) return null;
+  if (!r.ok) throw new Error(`GitHub a répondu ${r.status}`); // erreur ≠ « pas de nouvelle version »
   const rel = await r.json();
   if (!rel || !newer(rel.tag_name, currentVersion)) return null;
   const asset = (rel.assets || []).find(a => /\.exe$/i.test(a.name) && a.size > 1e6 && a.size < 500e6);
