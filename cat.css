@@ -94,7 +94,18 @@
 
 /* ---------- Corps de profil (les pattes sont animées par rig.js) ---------- */
 .cat .body-side { transform-origin: 50% 100%; }
-.cat.pose-run .tail-side { transform: rotate(-50deg); }
+/* Galop : le corps s'allonge et se ramasse à chaque foulée (--ext, calculé par rig.js), la tête basse en avant,
+   la queue tendue derrière pour l'équilibre */
+.cat.pose-run .body-side {
+  transform: scaleX(calc(1.04 + var(--ext, 0) * .16)) scaleY(calc(.97 - var(--ext, 0) * .06)) rotate(calc(var(--ext, 0) * -2.5deg));
+  transition: opacity .18s ease-out;
+}
+.cat.pose-run .head { transform: translate(calc(35px + var(--ext, 0) * 10px), calc(-2px + var(--ext, 0) * 2px)) scale(.92); transition: scale .6s; }
+.cat.pose-run .tail-side { animation: none; transform: rotate(calc(-84deg + var(--ext, 0) * 10deg)); transition: none; }
+/* Folie : pupilles grandes ouvertes (presque tout l'œil est noir), oreilles un peu en arrière */
+.cat.zoomies .pupil { transform: scale(1.85, 1.5); transition-duration: .5s; }
+.cat.zoomies .ear-l { transform: rotate(-16deg) scaleY(.9); }
+.cat.zoomies .ear-r { transform: rotate(16deg) scaleY(.9); }
 /* Saut : le corps suit la trajectoire */
 .cat.pose-jump .body-side { transform: rotate(-9deg); }
 .cat.pose-jump.falling .body-side { transform: rotate(7deg); }
@@ -105,10 +116,10 @@
 @keyframes wiggle { 0%,100% { transform: rotate(-8deg); } 50% { transform: rotate(10deg); } }
 /* Étirement : avant bas, derrière haut */
 .cat.pose-stretch .body-side { transform: rotate(12deg); transform-origin: 15% 100%; }
-.cat.pose-stretch .tail-side { transform: rotate(-30deg); }
+.cat.pose-stretch .tail-side { animation: none; transform: rotate(-30deg); }
 /* Câlin : il se penche vers la main, la queue dressée */
 .cat.pose-lean .body-side { transform: rotate(-4deg); transform-origin: 20% 100%; }
-.cat.pose-lean .tail-side { transform: rotate(-38deg); }
+.cat.pose-lean .tail-side { animation: none; transform: rotate(-38deg); }
 /* Sur le dos */
 .cat.pose-roll .body-side { transform: translateY(17px) rotate(180deg) scaleX(-1); transform-origin: 50% 50%; }
 .cat.pose-roll .tail-side { display: none; }

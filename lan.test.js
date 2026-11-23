@@ -70,3 +70,29 @@ test("l'annonce part sur chaque carte réseau, et on peut ajouter un ami par son
   for (const bad of ['192.168.1', '999.1.1.1', 'localhost', '1.2.3.4; rm', '']) assert.ok(!isIPv4(bad), bad);
   assert.ok(!lan.addManual('pas une ip'));
 });
+
+test("pare-feu d'un seul côté : les deux apps se voient et s'envoient leurs chats quand même", async (t) => {
+  // Léa ne reçoit pas l'UDP, et Léa n'arrive pas à se connecter chez Sam (comme un pare-feu)
+  const sam = new Lan({ id: 'sam3', nick: 'Sam', ver: '0.6.0', udpPort: UDP + 2, announceMs: 200, expireMs: 1500 });
+  const lea = new Lan({ id: 'lea3', nick: 'Léa', ver: '0.6.0', udpPort: UDP + 2, announceMs: 200, expireMs: 1500 });
+  lea.test.noUdpIn = true;
+  lea.test.blockDial.add('sam3');
+  t.after(() => { sam.stop(); lea.stop(); });
+  await sam.start(); await lea.start();
+  assert.ok(await until(() => sam.peers().some(p => p.id === 'lea3') && lea.peers().some(p => p.id === 'sam3')), 'découverte malgré le pare-feu');
+  assert.strictEqual(lea.peer('sam3').ver, '0.6.0');
+  await wait(2000); // ils restent dans la liste (plus longtemps que l'expiration)
+  assert.ok(lea.peers().some(p => p.id === 'sam3') && sam.peers().some(p => p.id === 'lea3'), 'toujours visibles');
+
+  // Léa envoie son chat à Sam : la connexion directe échoue, ça passe par la boîte aux lettres
+  let received = null;
+  sam.handlers.travel = async (body, from) => { received = { body, from }; return { ok: true, n: 1 }; };
+  const r = await lea.send('sam3', 'travel', { visitId: 'v2', cat: { name: 'Mimi' } });
+  assert.deepStrictEqual(r, { ok: true, n: 1 });
+  assert.strictEqual(received.from.id, 'lea3');
+  assert.strictEqual(received.body.cat.name, 'Mimi');
+
+  // Et dans l'autre sens, en direct
+  lea.handlers.status = async () => ({ ok: true, s: 2 });
+  assert.deepStrictEqual(await sam.send('lea3', 'status', {}), { ok: true, s: 2 });
+});

@@ -22,7 +22,8 @@
   // Décalage de phase de chaque patte : marche (pas diagonal) et galop
   const GAIT = {
     walk: { lh: 0, lf: 0.25, rh: 0.5, rf: 0.75, amp: 22, stance: 0.62, stride: 34 },
-    run: { lh: 0, rh: 0.08, lf: 0.5, rf: 0.58, amp: 38, stance: 0.42, stride: 66 }
+    // Galop : les deux pattes arrière poussent presque ensemble, puis les deux avant ; grandes foulées
+    run: { lh: 0, rh: 0.1, lf: 0.5, rf: 0.6, amp: 46, stance: 0.36, stride: 82 }
   };
 
   const ease = (u) => u * u * (3 - 2 * u);
@@ -51,6 +52,7 @@
       }
       this.phase = 0;     // avancement du cycle de marche
       this.t = 0;
+      this.ext = 0;       // galop : -1 = ramassé (dos rond, pattes sous lui), +1 = allongé (pattes tendues)
     }
 
     // pose : 'stand' | 'walk' | 'run' | 'jump' | 'fall' | 'crouch' | 'stretch' | 'roll' | 'scratch'
@@ -82,8 +84,13 @@
           j.el.setAttribute('transform', `translate(${j.x} ${j.y}) rotate(${j.a.toFixed(2)})`);
         });
       }
+      // Au galop, le dos se ramasse puis s'allonge à chaque foulée, comme un vrai chat :
+      // allongé quand les pattes arrière ont fini de pousser et que l'avant se tend vers l'avant.
+      const goal = pose === 'run' ? Math.cos(2 * Math.PI * (this.phase - 0.46)) : 0;
+      this.ext += (goal - this.ext) * (1 - Math.exp(-dt * (pose === 'run' ? 45 : 8)));
+      if (pose === 'run') return -(this.ext + 1) * 1.8; // le corps monte pendant la phase allongée (suspension)
       // Petit balancement du corps en marchant (deux fois par cycle)
-      return g ? Math.sin(this.phase * Math.PI * 4) * (pose === 'run' ? 2.2 : 0.8) : 0;
+      return g ? Math.sin(this.phase * Math.PI * 4) * 0.8 : 0;
     }
   }
 

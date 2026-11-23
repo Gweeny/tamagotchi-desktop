@@ -154,7 +154,7 @@ window.desk.onEnter((m) => {
   showCat();
 });
 // On l'a rappelé ailleurs : il disparaît d'ici
-window.desk.onLeave(() => { endGame(false); endCare(false); here = false; hideCat(); closePanel(); });
+window.desk.onLeave(() => { endGame(false); endCare(false); stopScript(); here = false; hideCat(); closePanel(); grave.classList.remove('show'); if (pension.classList.contains('show')) hideSign(); });
 
 // Le passage a échoué (écran débranché, personne chez l'ami) : il revient
 window.desk.onBounce((side) => {
@@ -275,6 +275,8 @@ poufEl.addEventListener('mousedown', (e) => { if (e.button === 0) { poufDrag = e
 let last = performance.now();
 let lastPos = 0;
 function tick(now) {
+  // Le chat n'est pas sur cet écran (et rien ne bouge ici) : on tourne au ralenti pour économiser le processeur
+  if (s.gone && !game && !care && !treat.visible && !poufDrag) { last = now; setTimeout(() => requestAnimationFrame(tick), 250); return; }
   const dt = Math.min((now - last) / 1000, 0.033);
   last = now;
   const x0 = s.x;
@@ -357,7 +359,7 @@ function sideEdge(side) {
   s.x = side === 'left' ? 0 : W - cw;
   s.vx = (side === 'left' ? 1 : -1) * speed * BOUNCE;
   s.vrot = -s.vrot * 0.5;
-  if (isMoving() && activity.name !== 'script') activity.until = 0;
+  if (isMoving() && activity.name !== 'script' && activity.name !== 'crazy') activity.until = 0;
 }
 
 function handOff(side, kind) {
@@ -366,6 +368,7 @@ function handOff(side, kind) {
   here = kind === 'friend';
   window.desk.exit({ side, y: s.y, vx: s.vx, vy: s.vy, rot: s.rot, nap: napGoal || 0 });
   napGoal = null;
+  stopScript(); // le trajet est fini ici (s'il revient, il repart de zéro)
   hideCat();
   closePanel();
 }
@@ -478,6 +481,7 @@ function nextActivity(now) {
   if (state.stage === 'senior') { w.loaf = (w.loaf || 0) + 2; if (w.crazy) w.crazy *= 0.3; }
   if (state.fat > 75 && w.crazy) w.crazy *= 0.4;
   applyPersonality(w);
+  if (n.energy < 60) w.nap = 1; // un peu fatigué : petite sieste dans son panier
   if (raining()) { w.nap = 4; if (w.walk) w.walk *= 0.5; }
   if (hot()) { w.loaf = (w.loaf || 0) + 3; if (w.walk) w.walk *= 0.6; if (w.crazy) w.crazy *= 0.3; }
 
@@ -595,25 +599,38 @@ function lastCrazy() { try { return Number(localStorage.getItem('lastCrazy')) ||
 function crazyAllowed() { return Date.now() - lastCrazy() > CRAZY_EVERY; }
 function startCrazy(now) {
   try { localStorage.setItem('lastCrazy', String(Date.now())); } catch {}
-  activity = { name: 'crazy', until: now + CRAZY_MS, target: null, spinUntil: 0, nextFlip: 0 };
-  icon('surprise', 900);
+  activity = { name: 'crazy', until: now + CRAZY_MS, target: null, spinUntil: 0, nextFlip: 0, pauseUntil: 0, t: now };
+  renderLook();
 }
+// Comme un vrai chat : il démarre en trombe, freine en dérapant avant de faire demi-tour,
+// s'arrête net (aux aguets) puis repart, bondit dans le sens de sa course, court après sa queue.
 function crazyTick(now) {
   const a = activity;
-  if (now > a.until) { activity = { name: 'loaf', until: now + 60000 }; pulse('yawning', 1400); return; } // épuisé : il se couche
+  const dt = Math.min((now - a.t) / 1000, 0.05); a.t = now;
+  if (now > a.until) { activity = { name: 'loaf', until: now + 60000 }; pulse('yawning', 1400); renderLook(); return; } // épuisé : il se couche
   if (!s.onFloor) return;
-  if (now < a.spinUntil) { // il court après sa queue
-    s.vx = 0;
-    if (now > a.nextFlip) { s.faceLeft = !s.faceLeft; a.nextFlip = now + 160; }
+  if (now < a.spinUntil) { // il court après sa queue (il se retourne sans cesse)
+    s.vx *= 0.8;
+    if (now > a.nextFlip) { s.faceLeft = !s.faceLeft; a.nextFlip = now + 260; }
     return;
   }
-  if (a.target === null || Math.abs(a.target - s.x) < 20) {
+  if (now < a.pauseUntil) { s.vx *= Math.exp(-dt * 10); return; } // arrêt net, aux aguets
+  const top = RUN * 1.3 * speedK();
+  if (a.target === null || Math.abs(a.target - (s.x + cw / 2)) < 30) {
     const r = Math.random();
-    if (r < 0.2) { a.spinUntil = now + 1200; a.target = null; return; }
-    if (r < 0.55) hop(520 + Math.random() * 380, (Math.random() < 0.5 ? -1 : 1) * (150 + Math.random() * 250)); // bond
-    a.target = clamp(Math.random() * (W - cw), 0, W - cw);
+    if (r < 0.14) { a.spinUntil = now + 1100; a.target = null; return; }
+    if (r < 0.32) { a.pauseUntil = now + 300 + Math.random() * 700; a.target = null; return; }
+    // nouvelle cible, plutôt loin (il traverse l'écran)
+    const far = s.x + cw / 2 < W / 2 ? W * (0.6 + Math.random() * 0.35) : W * (0.05 + Math.random() * 0.35);
+    a.target = clamp(far, cw / 2, W - cw / 2);
   }
-  s.vx = Math.sign(a.target - s.x) * RUN * 1.25 * speedK();
+  const dir = Math.sign(a.target - (s.x + cw / 2));
+  const want = dir * top;
+  // Accélère vite, freine encore plus vite (dérapage) quand il change de sens
+  const turning = Math.sign(s.vx) !== dir && Math.abs(s.vx) > 30;
+  s.vx += (want - s.vx) * (1 - Math.exp(-dt * (turning ? 9 : 4)));
+  // Bond en pleine course, dans le même sens
+  if (!turning && Math.abs(s.vx) > top * 0.7 && Math.random() < dt * 0.9) hop(420 + Math.random() * 300, s.vx * 1.15);
 }
 
 // Saluer un autre chat : il va à côté de lui, se tourne vers lui, petit bisou de nez
@@ -707,7 +724,12 @@ function stirDuringNap() {
 // Se coucher ou pétrir : dans son panier s'il est sur cet écran (sinon là où il est)
 function restInBasket(pose, ms) {
   const p = sharedPouf();
-  if (!p || state.expr.tier === 'dying') return false;
+  if (state.expr.tier === 'dying') return false;
+  if (!p) {
+    // Son panier est sur un autre de mes écrans : il y va pour se reposer (pas quand un ami est là)
+    if (pose === 'loaf' && poufDir && !GUEST && !others.size) { goToBasket(false, ms); return true; }
+    return false;
+  }
   const x = others.size ? poufSlot(p) : p.x + p.w / 2 - cw / 2;
   script([
     { walk: x },
@@ -733,6 +755,7 @@ function runScript(now) {
   const next = () => { if (st.onEnd) st.onEnd(); a.i++; a.started = false; };
   if ('fn' in st) { st.fn(); if (activity === a) next(); return; }
   if ('exit' in st) { // traverser vers l'écran voisin (le processus principal le fait passer)
+    if (edges[st.exit < 0 ? 'left' : 'right'] !== 'screen') { s.travel = false; napGoal = null; stopScript(); return; } // l'écran a disparu
     if (!s.onFloor) return;
     s.onPouf = false; s.travel = true;
     s.vx = st.exit * WALK * 0.8 * speedK(); s.faceLeft = st.exit < 0;
@@ -765,7 +788,7 @@ function currentPose() {
   switch (activity.name) {
     case 'walk': return 'walk';
     case 'run': case 'chase': case 'flee': return 'run';
-    case 'crazy': return now2() < activity.spinUntil ? 'stand' : Math.abs(s.vx) > 40 ? 'run' : 'crouch';
+    case 'crazy': return now2() < activity.spinUntil ? 'stand' : Math.abs(s.vx) > 30 ? 'run' : 'crouch';
     case 'hunt': return 'crouch';
     case 'spin': return 'stand';
     case 'groom': case 'roll': case 'knead': case 'stretch': case 'loaf': return activity.name;
@@ -814,6 +837,7 @@ function draw(now, dt, moved) {
     const rp = shownPose === 'jump' ? (s.vy > 0 ? 'fall' : 'jump')
       : ['walk', 'run', 'crouch', 'stretch', 'roll', 'scratch'].includes(shownPose) ? shownPose : 'stand';
     bob = rig.update(dt, rp, moved / U) * U;
+    cat.style.setProperty('--ext', rig.ext.toFixed(3));
   }
   cat.style.left = s.x + 'px';
   cat.style.top = s.y + 'px';
@@ -921,6 +945,7 @@ function renderLook() {
   c.toggle('sick', state.sick && !state.dead);
   c.toggle('dirty', n.clean < LOW && !state.dead);
   c.toggle('big-pupils', awake && (tier === 'dramatic' || !!game || ['hunt', 'flee', 'crazy'].includes(activity.name)));
+  c.toggle('zoomies', awake && activity.name === 'crazy');
   const extra = (override && override.cls) || (st && st.cls) || (care && care.cls) || (activity.name === 'knead' ? ['purr'] : []);
   for (const k of ['love', 'purr', 'lick']) c.toggle(k, extra.includes(k));
 
@@ -940,6 +965,7 @@ function renderLook() {
     if ((game || activity.name === 'hunt') && tier !== 'dying') { eyes = 'open'; lids = 'none'; brows = 'none'; mouth = game && game.happy ? 'big' : 'o'; }
     if (activity.name === 'knead' || activity.name === 'roll') { eyes = 'joy'; mouth = activity.name === 'roll' ? 'big' : 'smile'; }
     if (activity.name === 'nap') { eyes = 'closed'; mouth = 'smile'; }
+    if (activity.name === 'crazy') { eyes = 'open'; lids = 'none'; brows = 'none'; mouth = 'smile'; }
     if (state.sick && tier !== 'dying') { brows = 'sad'; if (mouth === 'smile' || mouth === 'big') mouth = 'flat'; }
     if (n.energy < LOW && lids === 'none' && eyes === 'open' && !game) lids = 'tired';
     if (fx.blinking && eyes === 'open') eyes = 'closed';

@@ -35,10 +35,10 @@ Compagnon de bureau
 F1 · P1 · Fait — Le chat s'affiche dans une fenêtre transparente par écran, sans bordure et toujours au premier plan, posé sur la barre des tâches.
 F2 · P1 · Fait — Les clics passent à travers la fenêtre sauf sur le chat (et sur la balle ou le panneau quand ils sont affichés).
 F3 · P1 · Fait — Le chat vit tout seul, et calmement : la plupart du temps il est assis, couché ou fait sa toilette (15 s à 1 min 30 par activité) ; il marche, s'étire, se roule sur le dos, pétrit. Son humeur, son âge, son énergie, son poids, son caractère et la météo changent sa façon de bouger.
-F3e · P1 · Fait — Son quart d'heure de folie : au plus une fois par heure, il court, saute et court après sa queue partout pendant 30 s, puis se couche, épuisé.
+F3e · P1 · Fait — Son quart d'heure de folie : au plus une fois par heure, il court, saute et court après sa queue partout pendant 30 s, puis se couche, épuisé. Comme un vrai chat : pupilles grandes ouvertes (yeux presque noirs), oreilles en arrière, galop où le corps s'allonge puis se ramasse à chaque foulée, queue tendue derrière ; il démarre en trombe, dérape avant de faire demi-tour, s'arrête net aux aguets puis repart.
 F3b · P1 · Fait — Il n'est jamais figé : respiration permanente, queue et oreilles qui bougent, clignements, yeux et tête qui suivent la souris (ou ce qui l'intéresse), écrasement à l'atterrissage et étirement au décollage.
 F3c · P1 · Fait — Animation réaliste : pattes articulées (hanche/épaule, genou/coude, cheville/poignet) animées par programme ; le rythme de marche suit la distance parcourue (les pattes ne glissent pas) ; passage en fondu d'une pose à l'autre.
-F3d · P1 · Fait — Il a un panier (assez grand pour deux), déplaçable à la souris, y compris sur un autre de mes écrans (on le lâche contre le bord) ; jamais chez un ami. Il y dort toujours, la nuit comme pour ses siestes : s'il est sur un autre écran, il y va à pied en changeant d'écran.
+F3d · P1 · Fait — Il a un panier (assez grand pour deux), déplaçable à la souris, y compris sur un autre de mes écrans (on le lâche contre le bord) ; jamais chez un ami. Il y dort toujours, la nuit comme pour ses siestes, et va s'y reposer (couché) : s'il est sur un autre écran, il y va à pied en changeant d'écran.
 F4 · P1 · Fait — Une icône dans la zone de notification donne accès à tous les soins, aux statistiques, au rappel du chat sur l'écran principal, à la pension, et permet de masquer, afficher ou quitter l'app.
 F5 · P1 · Fait — L'app se lance au démarrage de Windows (activé par défaut, case « Lancer au démarrage de Windows » dans Réglages).
 
@@ -105,7 +105,7 @@ F25 · P2 · Fait (partiel) — Chacun peut refuser toutes les visites (menu Ami
 F26b · P1 · Fait — Le chat invité peut lui aussi passer sur les autres écrans de l'ami (sa fenêtre le suit), comme le chat de la maison.
 F27 · P1 · Fait — Pendant une visite, les deux chats interagissent d'eux-mêmes : ils se saluent (bisou de nez), se courent après (l'un poursuit, l'autre s'enfuit), se blottissent l'un contre l'autre et dorment ensemble.
 F28 · P1 · Fait — Dès qu'un ami est en ligne, tous les bords extérieurs mènent chez lui (un mauvais réglage du côté de l'ami ne bloque plus la visite).
-F29 · P1 · Fait — Découverte robuste : annonce sur chaque carte réseau, réponse directe à l'ami, pseudo par défaut, et ajout d'un ami par son adresse IP en secours.
+F29 · P1 · Fait — Découverte robuste : annonce sur chaque carte réseau, réponse directe à l'ami, présentation en HTTP aux amis connus, pseudo par défaut, et ajout d'un ami par son adresse IP en secours. Si un pare-feu bloque un sens (un PC n'accepte pas les connexions), les messages passent par une « boîte aux lettres » que l'autre PC vient relever : il suffit qu'un des deux PC accepte les connexions. Le menu Ami affiche la version de l'app de l'ami.
 
 Exigences non fonctionnelles
 • Performance : moins de 2 % de CPU au repos, moins de 200 Mo de RAM, animation à 60 images/s. Animations en CSS et SVG natifs, sans librairie.
@@ -130,7 +130,8 @@ L'app est une application Electron en JavaScript.
 • Mises à jour automatiques (updater.js, sans paquet ; désactivables dans Réglages) : vérifiées au démarrage puis toutes les heures, téléchargées en arrière-plan, installées sans fenêtre la nuit pendant que le chat dort ou quand on quitte l'app ; l'installateur est ensuite supprimé. Le bouton « ✨ Mettre à jour » permet aussi d'installer tout de suite ; l'app demande à GitHub la dernière version publiée (Releases) ; si elle est plus récente, « Mettre à jour » télécharge l'installateur et relance l'app (sauvegarde conservée).
 • Hébergement : code et versions sur GitHub (gratuit, dépôt public).
 Messages échangés entre amis :
-• annonce (UDP) : identifiant, pseudo et port, toutes les 2 s. Un ami disparaît après 7 s sans annonce.
+• annonce (UDP) : identifiant, pseudo, port et version, toutes les 2 s, plus une présentation HTTP (/_hello) à chaque ami connu. Un ami disparaît après 7 s sans nouvelles.
+• boîte aux lettres : /_poll (relève, gardée ouverte 20 s) et /_answer (réponse), utilisées seulement quand la connexion directe échoue.
 • travel : le chat arrive (apparence, hauteur, vitesse). L'ami peut refuser.
 • care : un soin donné par l'ami (caresse, croquettes, friandise) ; le propriétaire l'applique et renvoie l'apparence à jour.
 • status : l'ami prend des nouvelles toutes les 10 s.

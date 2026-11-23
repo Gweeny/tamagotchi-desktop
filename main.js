@@ -358,7 +358,8 @@ function makeWindow(d, query) {
     hasShadow: false,
     focusable: true,
     show: false,
-    webPreferences: { preload: path.join(__dirname, 'preload.js') }
+    // backgroundThrottling : sinon Chromium ralentit une fenêtre recouverte par une autre (le chat saccade)
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), backgroundThrottling: false }
   });
   // Windows peut ajuster la taille au DPI de l'écran : on réimpose les bounds
   win.setBounds(d.bounds);
@@ -461,7 +462,10 @@ async function startVisit(sender, msg) {
     visitId, cat: guestPayload(), side: msg.side,
     y: d ? msg.y / d.bounds.height : 0.5, vx: msg.vx, vy: msg.vy
   });
-  if (!r || !r.ok) return bounce();
+  if (!r || !r.ok) {
+    sender.send('notice', !r ? `${peer.nick} ne répond pas (son app est peut-être en train de se fermer)` : `${peer.nick} n'accepte pas les visites pour l'instant`);
+    return bounce();
+  }
   visit = { id: visitId, peerId: peer.id, nick: peer.nick, since: Date.now() };
   stopGame();
   cat.history.unshift({ t: Date.now(), text: `${cat.name} est parti chez ${peer.nick}.` });
@@ -534,8 +538,10 @@ function startLan() {
   // Les profils de test (TAMA_PROFILE) peuvent utiliser leur propre canal réseau (TAMA_UDP_PORT)
   // pour ne jamais voir les vraies apps du réseau, ni leur envoyer de chat
   const testPort = PROFILE && /^\d{4,5}$/.test(process.env.TAMA_UDP_PORT || '') ? Number(process.env.TAMA_UDP_PORT) : undefined;
-  lan = new Lan({ id: settings.id, nick: myNick(), udpPort: testPort });
+  lan = new Lan({ id: settings.id, nick: myNick(), ver: app.getVersion(), udpPort: testPort });
   for (const ip of settings.friendIps) lan.addManual(ip);
+  // (tests seulement) simuler un PC derrière un pare-feu : il ne reçoit pas l'UDP et ne peut se connecter à personne
+  if (testPort && process.env.TAMA_TEST_FIREWALL === '1') { lan.test.noUdpIn = true; lan.test.blockDial.add('*'); }
   lan.on('error', (e) => console.error('Réseau :', e.message));
 
   // Un ami m'envoie son chat
@@ -571,8 +577,9 @@ function startLan() {
     if (!myVisit(body, from)) return { ok: false };
     endVisit();
     showAll();
-    // Il revient par le bord de l'ami, avec son élan
+    // Il revient par le bord de l'ami, avec son élan (sur l'écran principal : l'ancienne fenêtre le libère)
     const d = screen.getPrimaryDisplay();
+    if (catDisplayId !== d.id) { const old = catWin(); if (old) old.webContents.send('leave'); }
     catDisplayId = d.id;
     const num = (x, def) => (Number.isFinite(x) ? x : def);
     sendToCat('enter', { side: settings.friendSide === 'right' ? 'right' : 'left', y: Math.max(0, Math.min(1, num(body.y, 0.5))) * d.bounds.height, vx: -num(body.vx, 0), vy: num(body.vy, 0), rot: 0 });
@@ -614,7 +621,7 @@ function friendMenu() {
     { label: "Pas d'ami pour l'instant", type: 'radio', checked: settings.friendSide === 'none', click: () => setFriendSide('none') },
     { type: 'separator' },
     ...(peers.length
-      ? peers.map(p => ({ label: `${p.nick} (en ligne)`, type: 'radio', checked: chosen && chosen.id === p.id, click: () => { settings.friendId = p.id; saveSettings(); } }))
+      ? peers.map(p => ({ label: `${p.nick} (en ligne${p.ver ? `, version ${p.ver}` : ', ancienne version : à mettre à jour'})`, type: 'radio', checked: chosen && chosen.id === p.id, click: () => { settings.friendId = p.id; saveSettings(); } }))
       : [{ label: lan ? 'Personne en ligne sur le réseau' : 'Réseau indisponible', enabled: false }]),
     { label: 'Ajouter un ami par son adresse IP…', click: () => { showAll(); sendToCat('ask-ip'); } },
     ...(settings.friendIps.length ? [{ label: `Oublier les adresses ajoutées (${settings.friendIps.join(', ')})`, click: () => { for (const ip of settings.friendIps) lan && lan.removeManual(ip); settings.friendIps = []; saveSettings(); } }] : []),
