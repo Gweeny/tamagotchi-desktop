@@ -29,7 +29,7 @@ const windows = new Map(); // id de l'écran -> fenêtre transparente
 let catDisplayId = null;   // écran où se trouve le chat
 let cat = null;            // état du chat (null tant qu'il n'a pas été créé)
 // friendSide : côté du PC de l'ami ; friendId : l'ami choisi ; nickname : mon pseudo sur le réseau
-let settings = { id: null, nickname: null, friendSide: null, friendId: null, acceptVisits: true, friendIps: [], poufX: 0.82, poufDisplay: null, weatherCity: null, weatherCoords: null };
+let settings = { id: null, nickname: null, friendSide: null, friendId: null, acceptVisits: true, friendIps: [], poufX: 0.82, poufDisplay: null, weatherCity: null, weatherCoords: null, autoStart: true, autoUpdate: true };
 let tray = null;
 let hidden = false;        // fenêtres masquées depuis la zone de notification
 let lan = null;
@@ -73,6 +73,8 @@ function loadSettings() {
   if (Array.isArray(s.friendIps)) settings.friendIps = s.friendIps.filter(isIPv4).slice(0, 10);
   if (Number.isFinite(s.poufX)) settings.poufX = Math.max(0, Math.min(1, s.poufX));
   if (Number.isFinite(s.poufDisplay)) settings.poufDisplay = s.poufDisplay;
+  if (typeof s.autoStart === 'boolean') settings.autoStart = s.autoStart;
+  if (typeof s.autoUpdate === 'boolean') settings.autoUpdate = s.autoUpdate;
   if (typeof s.weatherCity === 'string') settings.weatherCity = s.weatherCity.slice(0, 60);
   if (s.weatherCoords && Number.isFinite(s.weatherCoords.lat) && Number.isFinite(s.weatherCoords.lon)) settings.weatherCoords = { lat: s.weatherCoords.lat, lon: s.weatherCoords.lon };
   settings.id = typeof s.id === 'string' && s.id ? s.id : crypto.randomUUID();
@@ -153,20 +155,51 @@ function stopGame() {
 }
 
 // ---------- Mises à jour (GitHub) ----------
+// Automatiques (par défaut) : dès qu'une nouvelle version existe, on la télécharge en arrière-plan,
+// puis on l'installe sans aucune fenêtre au bon moment : la nuit pendant que le chat dort, ou quand on quitte l'app.
+// L'installateur utilisé est supprimé au démarrage suivant.
 let update = null;      // { version, url, name, size } quand une nouvelle version existe
+let updateFile = null;  // installateur déjà téléchargé, prêt à installer
 let updating = false;
 async function checkUpdate(manual = false) {
   try {
     update = await updater.checkForUpdate(updateRepo, app.getVersion());
     if (update && tray) tray.setToolTip(`Tamagotchi — nouvelle version ${update.version} disponible`);
     if (manual) sendToCat('notice', update ? `Nouvelle version ${update.version} disponible : clic droit > ✨ Mettre à jour` : `Tu as la dernière version (${app.getVersion()})`);
+    if (update && settings.autoUpdate && app.isPackaged) prepareUpdate();
   } catch (e) {
     console.error('Mise à jour :', e.message);
     if (manual) sendToCat('notice', 'Impossible de vérifier les mises à jour (pas de connexion ?)');
   }
 }
+// Téléchargement en arrière-plan
+async function prepareUpdate() {
+  if (!update || updating || (updateFile && updateFile.version === update.version)) return;
+  updating = true;
+  try {
+    const file = await updater.download(update);
+    if (file) {
+      updateFile = { version: update.version, file };
+      if (tray) tray.setToolTip(`Tamagotchi — la version ${update.version} s'installera cette nuit (ou en quittant)`);
+    }
+  } catch (e) { console.error('Mise à jour :', e.message); }
+  updating = false;
+}
+// Installer maintenant, sans fenêtre, puis relancer le chat
+function installNow() {
+  if (!updateFile) return false;
+  saveCat();
+  updater.install(updateFile.file, { silent: true, relaunch: true });
+  updateFile = null;
+  app.quit();
+  return true;
+}
+// La nuit, quand il dort profondément, c'est le bon moment
+setInterval(() => { if (updateFile && settings.autoUpdate && cat && cat.asleep && cat.nightSleep && !currentGame && !guests.size && !visit) installNow(); }, 10 * 60000);
+// Bouton du menu : installer tout de suite
 async function installUpdate() {
   if (!update || updating) return;
+  if (updateFile && updateFile.version === update.version) { installNow(); return; }
   updating = true;
   if (tray) tray.setToolTip(`Téléchargement de la version ${update.version}…`);
   try {
@@ -175,9 +208,24 @@ async function installUpdate() {
   updating = false;
   if (tray) tray.setToolTip('La mise à jour a échoué, réessaie plus tard');
 }
-const updateItems = () => (update ? [{ label: updating ? `Téléchargement de la version ${update.version}…` : `✨ Mettre à jour vers la version ${update.version}`, enabled: !updating, click: installUpdate }, { type: 'separator' }] : []);
+const updateItems = () => (update ? [{ label: updating ? `Téléchargement de la version ${update.version}…` : `✨ Mettre à jour vers la version ${update.version}${updateFile ? ' (prête)' : ''}`, enabled: !updating, click: installUpdate }, { type: 'separator' }] : []);
+
+// ---------- Lancement au démarrage de Windows ----------
+// (seulement pour l'app installée : en développement, on n'inscrit rien)
+function applyAutoStart() {
+  if (!app.isPackaged || process.platform !== 'win32') return;
+  try { app.setLoginItemSettings({ openAtLogin: settings.autoStart }); } catch (e) { console.error('Démarrage auto :', e.message); }
+}
+function settingsMenu() {
+  return { label: 'Réglages', submenu: [
+    { label: 'Lancer au démarrage de Windows', type: 'checkbox', checked: settings.autoStart, enabled: app.isPackaged,
+      click: (item) => { settings.autoStart = item.checked; saveSettings(); applyAutoStart(); } },
+    { label: 'Mises à jour automatiques', type: 'checkbox', checked: settings.autoUpdate,
+      click: (item) => { settings.autoUpdate = item.checked; saveSettings(); if (item.checked) checkUpdate(); } }
+  ] };
+}
 // En bas des menus : la version, et vérifier soi-même s'il y a du nouveau
-const versionItems = () => [{ label: `Version ${app.getVersion()} — rechercher une mise à jour`, click: () => { showAll(); checkUpdate(true); } }];
+const versionItems = () => [settingsMenu(), { label: `Version ${app.getVersion()} — rechercher une mise à jour`, click: () => { showAll(); checkUpdate(true); } }];
 
 // ---------- Météo ----------
 // Facultatif : si on a donné sa ville, on demande la météo à Open-Meteo (gratuit, sans clé, sans paquet en plus)
@@ -878,6 +926,8 @@ app.whenReady().then(() => {
   screen.on('display-metrics-changed', (_e, _d, changed) => { if (changed.includes('bounds')) rebuild(); });
 
   createTray();
+  applyAutoStart();
+  updater.cleanup(app.getVersion());
   startLan();
   updateWeather();
   setInterval(updateWeather, WEATHER_MS);
@@ -899,6 +949,7 @@ app.on('second-instance', () => { if (cat) recallCat(); else showAll(); });
 app.on('before-quit', () => {
   if (cat) engine.update(cat, Date.now(), SPEED);
   saveCat();
+  if (updateFile && settings.autoUpdate) { updater.install(updateFile.file, { silent: true, relaunch: false }); updateFile = null; }
   // Les chats invités rentrent chez eux (on prévient sans attendre)
   for (const id of [...guests.keys()]) sendGuestHome(id);
   if (lan) lan.stop();

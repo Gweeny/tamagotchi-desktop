@@ -33,17 +33,43 @@ async function checkForUpdate(repo, currentVersion) {
   return { version: String(rel.tag_name).replace(/^v/, ''), url: url.href, name: asset.name, size: asset.size };
 }
 
-// Télécharge l'installateur dans le dossier temporaire puis le lance ; renvoie true si c'est parti
-async function downloadAndInstall(update) {
+const PREFIX = 'Tamagotchi-Desktop-Setup-';
+
+// Télécharge l'installateur dans le dossier temporaire ; renvoie son chemin (ou null)
+async function download(update) {
   const r = await fetch(update.url, { headers: { 'User-Agent': 'tamagotchi-desktop' }, redirect: 'follow', signal: AbortSignal.timeout(10 * 60000) });
   const final = new URL(r.url);
-  if (!r.ok || !ALLOWED_HOSTS.includes(final.hostname)) return false;
+  if (!r.ok || !ALLOWED_HOSTS.includes(final.hostname)) return null;
   const buf = Buffer.from(await r.arrayBuffer());
-  if (buf.length !== update.size) return false; // téléchargement incomplet
-  const file = path.join(os.tmpdir(), `Tamagotchi-Desktop-Setup-${update.version.replace(/[^0-9.]/g, '')}.exe`);
+  if (buf.length !== update.size) return null; // téléchargement incomplet
+  const file = path.join(os.tmpdir(), `${PREFIX}${update.version.replace(/[^0-9.]/g, '')}.exe`);
   fs.writeFileSync(file, buf);
-  spawn(file, [], { detached: true, stdio: 'ignore' }).unref();
+  return file;
+}
+
+// Lance l'installateur. silent : sans aucune fenêtre ; relaunch : relancer le chat après l'installation
+function install(file, { silent = false, relaunch = true } = {}) {
+  const args = silent ? ['/S', ...(relaunch ? ['--force-run'] : [])] : [];
+  spawn(file, args, { detached: true, stdio: 'ignore' }).unref();
+}
+
+// Ancien comportement (bouton « Mettre à jour ») : télécharger puis installer tout de suite
+async function downloadAndInstall(update) {
+  const file = await download(update);
+  if (!file) return false;
+  install(file);
   return true;
 }
 
-module.exports = { checkForUpdate, downloadAndInstall, newer };
+// Ménage : supprime les installateurs déjà utilisés qui traînent dans le dossier temporaire
+function cleanup(currentVersion) {
+  try {
+    for (const f of fs.readdirSync(os.tmpdir())) {
+      if (!f.startsWith(PREFIX) || !f.endsWith('.exe')) continue;
+      const v = f.slice(PREFIX.length, -4);
+      if (!newer(v, currentVersion)) { try { fs.unlinkSync(path.join(os.tmpdir(), f)); } catch {} }
+    }
+  } catch {}
+}
+
+module.exports = { checkForUpdate, download, install, downloadAndInstall, cleanup, newer };
