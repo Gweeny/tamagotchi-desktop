@@ -278,3 +278,23 @@ test('personnalité : choisie une seule fois, et elle change les besoins et les 
   assert.strictEqual(old.personality, 'joueur');
   assert.strictEqual(old.history.length <= 5, true, 'historique limité à 5');
 });
+
+test('sommeil : la nuit il récupère 100 en 8 h, en sieste 20 par heure', () => {
+  const st = fresh(at(0, 22, 1));
+  fill(st); st.needs.energy = 0;
+  e.update(st, at(0, 22, 1));
+  assert.ok(st.asleep && st.nightSleep);
+  e.update(st, at(1, 2, 1));
+  assert.ok(Math.abs(st.needs.energy - 50) < 1, `4 h de nuit : ${st.needs.energy}`);
+  e.update(st, at(1, 6, 1));
+  assert.ok(st.needs.energy >= 99.5, `8 h de nuit : ${st.needs.energy}`);
+
+  const nap = fresh(at(0, 12));
+  fill(nap); nap.needs.energy = 30;
+  e.act(nap, 'sleep');
+  assert.ok(nap.asleep && !nap.nightSleep);
+  e.update(nap, at(0, 14));
+  assert.ok(Math.abs(nap.needs.energy - 70) < 1 && nap.asleep, `2 h de sieste : ${nap.needs.energy}`);
+  e.update(nap, at(0, 16));
+  assert.ok(!nap.asleep, 'réveillé quand il est à 100');
+});

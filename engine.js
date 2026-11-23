@@ -17,7 +17,8 @@ const RATES = {                    // par heure : [au-dessus de KNEE, en dessous
   moodAsleep: [1, 0.2]
 };
 const ENERGY_AWAKE = -5;           // 14 h éveillé (8 h -> 22 h) : -70
-const ENERGY_ASLEEP = 8;           // 10 h de nuit : +80
+const ENERGY_NIGHT = 12.5;         // la nuit : 0 -> 100 en 8 h
+const ENERGY_NAP = 20;             // sieste en journée : +20 par heure
 const HEALTH_DECAY = 0.4;          // par heure : 100 -> 33 en une semaine sans vétérinaire
 const HEALTH_LOW_LOSS = 0.3;       // en plus, par heure et par jauge sous KNEE
 const KIBBLE = 40;                 // 3 repas de 40 couvrent une journée
@@ -178,7 +179,7 @@ function step(st, h, t) {
   n.hunger = decay(n.hunger, RATES.hunger, h * (n.hunger > KNEE ? trait(st, 'hungerRate') : 1));
   n.clean = decay(n.clean, RATES.clean, h) - POOP_SMELL * st.poops.length * h;
   if (st.asleep) {
-    n.energy += ENERGY_ASLEEP * h;
+    n.energy += (st.nightSleep ? ENERGY_NIGHT : ENERGY_NAP) * h;
     n.mood = decay(n.mood, RATES.moodAsleep, h);
     if (n.energy >= 100 && !st.nightSleep) wakeUp(st, t, `${st.name} se réveille de sa sieste.`);
   } else {

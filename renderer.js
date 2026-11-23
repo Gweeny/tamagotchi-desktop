@@ -384,9 +384,16 @@ function think(now) {
   // Endormi : il va dormir sur son pouf (ou contre un autre chat qui dort)
   if (state.asleep) {
     if (activity.name !== 'sleep') goToSleep(now);
-    else if (activity.name === 'sleep') { s.vx = 0; }
+    else {
+      s.vx = 0;
+      // Pendant la sieste (pas la nuit), il se réveille à moitié toutes les 20 min
+      if (state.nightSleep) napStirAt = 0;
+      else if (!napStirAt) napStirAt = now + STIR_EVERY;
+      else if (now >= napStirAt) { napStirAt = 0; stirDuringNap(); }
+    }
     return;
   }
+  napStirAt = 0;
   if (activity.name === 'sleep') { s.onPouf = false; activity = { name: 'stretch', until: now + 1600 }; pulse('yawning', 1400); }
   if (care && care.mode === 'love') { followHand(now); return; }
   if (!s.onFloor) return;
@@ -679,6 +686,23 @@ function goToBasket(sleep, napMs) {
   script([{ walk: x, slow: true }, ...done]);
 }
 function goToSleep() { goToBasket(true); }
+
+// Petit réveil pendant la sieste : il s'étire, fait quelques pas, puis retourne se coucher dans son panier
+// (s'il est à 100 % d'énergie, le moteur l'a déjà réveillé pour de bon)
+const STIR_EVERY = 20 * 60000;
+let napStirAt = 0;
+function stirDuringNap() {
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const sleepy = { eyes: 'open', lids: 'tired', mouth: 'smile' };
+  const dir = s.x + cw / 2 < W / 2 ? 1 : -1;
+  const x = clamp(s.x + dir * rand(70, 150) * K, 0, W - cw);
+  script([
+    { pose: 'stretch', ms: 1800, face: { eyes: 'closed', mouth: 'yawn' } },
+    { walk: x, slow: true, face: sleepy },
+    { pose: 'sit', ms: rand(2500, 5000), face: sleepy },
+    { fn: () => { if (state.asleep) goToSleep(); else activity = { name: 'stretch', until: performance.now() + 1600 }; } }
+  ]);
+}
 
 // Se coucher ou pétrir : dans son panier s'il est sur cet écran (sinon là où il est)
 function restInBasket(pose, ms) {

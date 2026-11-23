@@ -105,6 +105,7 @@ function view() {
     weightKg: engine.weightKg(cat),
     bodyLabel: engine.bodyLabel(cat.fat),
     asleep: cat.asleep,
+    nightSleep: !!cat.nightSleep,
     sick: cat.sick,
     dead: !!cat.dead,
     deathCause: cat.deathCause || null,

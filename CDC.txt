@@ -54,10 +54,10 @@ Rythme de soins visé : nourrir 3 fois par jour, jouer 2 fois par jour, nettoyer
 Les jauges baissent vite jusqu'à 20, puis très lentement : le chat reste longtemps au plus mal avant de mourir.
 • Faim : 100 -> 20 en 16 h, puis 20 -> 0 en 56 h. Croquettes +40, friandise +5. À 0 : il meurt.
 • Humeur : environ -4 par heure éveillé, et les chocs violents. Jouer (selon la durée), friandises (+12), caresses (aléatoires, voir F14b).
-• Énergie : -5 par heure éveillé (plus vite pour un chaton ou un senior), -15 pour 20 s de jeu. Le sommeil la remonte. À 0, il s'endort n'importe où.
+• Énergie : -5 par heure éveillé (plus vite pour un chaton ou un senior), -15 pour 20 s de jeu. Le sommeil la remonte : la nuit +12,5 par heure (0 -> 100 en 8 h), en sieste +20 par heure. À 0, il s'endort n'importe où.
 • Propreté : il fait une crotte par jour (entre 9 h et 19 h), visible au sol, qui sent (odeur, mouches). Tant qu'elle est là, la propreté baisse vite. On la ramasse en cliquant dessus (ou menu « Ramasser les crottes »). Brosser le chat la remonte aussi.
 • Santé : -0,4 par heure (il tombe malade au bout d'environ une semaine sans vétérinaire), plus vite si d'autres jauges sont au plus bas ou si son poids est mauvais. Le vétérinaire la remet à 100. Sous 30 : malade. À 0 : il meurt.
-• Sommeil : il dort de 22 h à 8 h. N'importe quelle action le réveille ; la nuit, il se rendort au bout de 15 min.
+• Sommeil : il dort de 22 h à 8 h. N'importe quelle action le réveille ; la nuit, il se rendort au bout de 15 min. Pendant une sieste en journée, toutes les 20 min il se réveille à moitié : il s'étire, fait quelques pas, puis retourne se coucher dans son panier ; il se réveille pour de bon quand son énergie atteint 100.
 Sans aucun soin, le chat meurt de faim au bout de 3 jours.
 
 Humeur affichée (paliers sur la jauge la plus basse, hors énergie)
