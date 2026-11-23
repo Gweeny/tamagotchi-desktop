@@ -928,6 +928,7 @@ app.whenReady().then(() => {
   createTray();
   applyAutoStart();
   updater.cleanup(app.getVersion());
+  setTimeout(() => updater.cleanup(app.getVersion()), 60000); // une 2e fois : l'installateur était peut-être encore ouvert
   startLan();
   updateWeather();
   setInterval(updateWeather, WEATHER_MS);
