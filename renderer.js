@@ -126,10 +126,24 @@ window.desk.onOthers((list) => {
   for (const o of list) others.set(o.id, { ...o, t: now });
 });
 window.desk.onSocial(({ from, type }) => {
+  if (!state || state.asleep || state.dead || game || care || override) return;
+  const now = performance.now();
+  // L'autre chat a un coup de folie : il s'y met aussi (s'il n'est pas trop fatigué)
+  if (type === 'crazy') {
+    if (activity.name === 'crazy' || state.needs.energy < 25) return;
+    stopScript(); s.onPouf = false; startCrazy(now, true);
+    return;
+  }
+  // Pendant la folie, l'autre lui court après : il file à l'autre bout
+  if (type === 'zchase' && activity.name === 'crazy') {
+    Object.assign(activity, { fleeFrom: from, fleeUntil: now + 2400, chaseId: null, target: null, pauseUntil: 0, spinUntil: 0 });
+    icon('surprise', 700);
+    return;
+  }
   // On lui court après : il bondit (même s'il était blotti dans le panier) et s'enfuit
-  if (type === 'chased' && state && !state.asleep && !state.dead && !game && !care && !override) {
+  if (type === 'chased' || type === 'zchase') {
     stopScript(); s.onPouf = false;
-    activity = { name: 'flee', from, until: performance.now() + 2600 };
+    activity = { name: 'flee', from, until: now + 2600 };
     icon('surprise', 900);
   }
 });
@@ -290,6 +304,7 @@ function tick(now) {
   }
   draw(now, dt, Math.abs(s.x - x0));
   updateTreat(dt);
+  updateBug(dt);
   // Position partagée avec les autres chats de l'écran (visites)
   if (here && !s.gone && now - lastPos > 200) {
     lastPos = now;
@@ -428,6 +443,11 @@ function think(now) {
       }
       return;
     case 'crazy': crazyTick(now); return;
+    case 'tailchase':
+      s.vx = 0;
+      if (now > activity.nextFlip) { s.faceLeft = !s.faceLeft; activity.nextFlip = now + 380; }
+      if (now > activity.until) { activity = { name: 'sit', until: now + 6000 }; renderLook(); }
+      return;
     case 'chase': case 'flee': {
       const o = others.get(activity.id || activity.from);
       if (!o || now > activity.until) { if (o) cuddle(); else nextActivity(now); return; } // puis retour au panier, ensemble
@@ -472,8 +492,16 @@ function nextActivity(now) {
     dramatic: { loaf: 6, sit: 2, walk: 0.3 },
     dying: { loaf: 1 }
   }[tier] || { sit: 1 };
-  if (others.size && n.energy > 30 && ['ecstatic', 'happy', 'smile', 'grumpy'].includes(tier)) w.chase = 1.5;
+  if (others.size && n.energy > 30 && ['ecstatic', 'happy', 'smile', 'grumpy'].includes(tier) && ![...others.values()][0].asleep) w.chase = 1.5;
   if (others.size) { w.cuddle = 4; if (w.walk) w.walk *= 0.4; if (w.crazy) w.crazy *= 0.5; }
+  // Petites occupations quand il est seul dans son coin (au lieu de rester assis à te regarder)
+  if (['ecstatic', 'happy', 'smile', 'grumpy'].includes(tier)) {
+    w.sniff = 1; w.bug = tier === 'grumpy' ? 0.2 : 0.7; w.tail = state.stage === 'kitten' ? 0.5 : 0.2;
+    if (w.groom) w.groom += 0.5;
+  }
+  // Pendant une visite, ils restent ensemble : s'il s'est éloigné de l'autre chat, il le rejoint
+  const mate = others.size ? [...others.values()][0] : null;
+  if (mate && Math.abs((mate.x + mate.cw / 2) - catCenter()) > 320) { w.join = 8; delete w.walk; delete w.sniff; delete w.bug; }
   // Son quart d'heure de folie : 30 s à courir et sauter partout, au plus une fois par heure
   if (crazyAllowed() && n.energy > 40 && ['ecstatic', 'happy', 'smile'].includes(tier)) w.crazy = 0.5;
   if (n.energy < LOW) { w.loaf = (w.loaf || 0) + 4; if (w.chase) w.chase *= 0.15; }
@@ -488,7 +516,12 @@ function nextActivity(now) {
   const name = weighted(w);
   const target = () => clamp(s.x + rand(-280, 280), 10, W - cw - 10);
   switch (name) {
-    case 'walk': activity = { name, target: target(), until: now + 12000 }; break;
+    case 'walk': activity = { name, target: mate ? clamp(mate.x + (Math.random() < 0.5 ? -1 : 1) * rand(80, 200), 10, W - cw - 10) : target(), until: now + 12000 }; break;
+    case 'join': { const side = catCenter() < mate.x + mate.cw / 2 ? -1 : 1;
+      activity = { name: 'walk', target: clamp(mate.x + mate.cw / 2 + side * (mate.cw * 0.5 + cw * 0.5 + 10) - cw / 2, 10, W - cw - 10), until: now + 15000 }; break; }
+    case 'sniff': sniffAround(); break;
+    case 'bug': watchBug(); break;
+    case 'tail': activity = { name: 'tailchase', until: now + rand(1800, 3000), nextFlip: 0 }; break;
     case 'crazy': startCrazy(now); break;
     case 'nap': if (raining() && Math.random() < 0.5) icon('rain', 1600); goToBasket(false, rand(60000, 120000)); break;
     case 'approach': // (câlin) il vient s'asseoir près de toi
@@ -597,40 +630,74 @@ function applyPersonality(w) {
 const CRAZY_MS = 30000, CRAZY_EVERY = 3600000;
 function lastCrazy() { try { return Number(localStorage.getItem('lastCrazy')) || 0; } catch { return 0; } }
 function crazyAllowed() { return Date.now() - lastCrazy() > CRAZY_EVERY; }
-function startCrazy(now) {
+function startCrazy(now, joined = false) {
   try { localStorage.setItem('lastCrazy', String(Date.now())); } catch {}
-  activity = { name: 'crazy', until: now + CRAZY_MS, target: null, spinUntil: 0, nextFlip: 0, pauseUntil: 0, t: now };
+  activity = { name: 'crazy', until: now + CRAZY_MS - (joined ? 600 : 0), target: null, spinUntil: 0, nextFlip: 0, pauseUntil: 0, t: now,
+    chaseId: null, chaseUntil: 0, fleeFrom: null, fleeUntil: 0 };
+  // La folie est contagieuse : l'autre chat de l'écran s'y met aussi
+  if (!joined) for (const id of others.keys()) window.desk.social(id, 'crazy');
   renderLook();
 }
 // Comme un vrai chat : il démarre en trombe, freine en dérapant avant de faire demi-tour,
 // s'arrête net (aux aguets) puis repart, bondit dans le sens de sa course, court après sa queue.
+// À deux : de temps en temps l'un court après l'autre, qui file à l'autre bout de l'écran.
 function crazyTick(now) {
   const a = activity;
   const dt = Math.min((now - a.t) / 1000, 0.05); a.t = now;
-  if (now > a.until) { activity = { name: 'loaf', until: now + 60000 }; pulse('yawning', 1400); renderLook(); return; } // épuisé : il se couche
+  if (now > a.until) { // essoufflé : il halète un peu puis va se coucher (contre l'autre chat s'il y en a un)
+    pulse('yawning', 1400);
+    if (others.size) cuddle([{ pose: 'sit', ms: 1800, face: { eyes: 'open', lids: 'tired', mouth: 'o' } }]);
+    else activity = { name: 'loaf', until: now + 60000 };
+    renderLook();
+    return;
+  }
   if (!s.onFloor) return;
+  const me = s.x + cw / 2;
+  // Poursuite en cours (il chasse, ou il est chassé)
+  const chaser = a.fleeFrom && now < a.fleeUntil ? others.get(a.fleeFrom) : null;
+  const prey = a.chaseId && now < a.chaseUntil ? others.get(a.chaseId) : null;
+  if (!chaser) a.fleeFrom = null;
+  if (!prey) a.chaseId = null;
+  if (chaser) {
+    const cx = chaser.x + chaser.cw / 2;
+    if (a.target === null || Math.abs(a.target - me) < 30) a.target = cx < me ? W - cw / 2 - 10 : cw / 2 + 10; // à l'opposé
+    a.spinUntil = 0; a.pauseUntil = 0;
+  } else if (prey) {
+    const px = prey.x + prey.cw / 2;
+    a.target = px;
+    if (Math.abs(px - me) < (cw + prey.cw) * 0.38) { // rattrapé : petit bond joueur, et chacun repart
+      hop(380, Math.sign(px - me) * 220);
+      a.chaseId = null; a.target = null; icon('note', 900);
+      return;
+    }
+  }
   if (now < a.spinUntil) { // il court après sa queue (il se retourne sans cesse)
     s.vx *= 0.8;
     if (now > a.nextFlip) { s.faceLeft = !s.faceLeft; a.nextFlip = now + 260; }
     return;
   }
   if (now < a.pauseUntil) { s.vx *= Math.exp(-dt * 10); return; } // arrêt net, aux aguets
-  const top = RUN * 1.3 * speedK();
-  if (a.target === null || Math.abs(a.target - (s.x + cw / 2)) < 30) {
+  const top = RUN * 1.3 * speedK() * (chaser ? 1.08 : 1);
+  if (a.target === null || (!prey && !chaser && Math.abs(a.target - me) < 30)) {
     const r = Math.random();
-    if (r < 0.14) { a.spinUntil = now + 1100; a.target = null; return; }
-    if (r < 0.32) { a.pauseUntil = now + 300 + Math.random() * 700; a.target = null; return; }
-    // nouvelle cible, plutôt loin (il traverse l'écran)
-    const far = s.x + cw / 2 < W / 2 ? W * (0.6 + Math.random() * 0.35) : W * (0.05 + Math.random() * 0.35);
-    a.target = clamp(far, cw / 2, W - cw / 2);
+    const other = others.size ? [...others.entries()][0] : null;
+    if (other && !other[1].asleep && r < 0.3) { // il court après l'autre chat (s'il est réveillé)
+      a.chaseId = other[0]; a.chaseUntil = now + 3000; a.target = other[1].x + other[1].cw / 2;
+      window.desk.social(other[0], 'zchase');
+    } else if (r < 0.42) { a.spinUntil = now + 1100; a.target = null; return; }
+    else if (r < 0.58) { a.pauseUntil = now + 300 + Math.random() * 700; a.target = null; return; }
+    else { // nouvelle cible, plutôt loin (il traverse l'écran)
+      const far = me < W / 2 ? W * (0.6 + Math.random() * 0.35) : W * (0.05 + Math.random() * 0.35);
+      a.target = clamp(far, cw / 2, W - cw / 2);
+    }
   }
-  const dir = Math.sign(a.target - (s.x + cw / 2));
+  const dir = Math.sign(a.target - me) || 1;
   const want = dir * top;
   // Accélère vite, freine encore plus vite (dérapage) quand il change de sens
   const turning = Math.sign(s.vx) !== dir && Math.abs(s.vx) > 30;
   s.vx += (want - s.vx) * (1 - Math.exp(-dt * (turning ? 9 : 4)));
   // Bond en pleine course, dans le même sens
-  if (!turning && Math.abs(s.vx) > top * 0.7 && Math.random() < dt * 0.9) hop(420 + Math.random() * 300, s.vx * 1.15);
+  if (!turning && !prey && Math.abs(s.vx) > top * 0.7 && Math.random() < dt * 0.9) hop(420 + Math.random() * 300, s.vx * 1.15);
 }
 
 // Saluer un autre chat : il va à côté de lui, se tourne vers lui, petit bisou de nez
@@ -654,7 +721,7 @@ function sharedPouf() {
 function poufSlot(p) { return clamp(p.x + p.w / 2 + (GUEST ? 1 : -1) * p.w * 0.18 - cw / 2, 0, W - cw); }
 
 // Se blottir contre l'autre chat, dans le panier (ou à côté de lui s'il n'y a pas de panier)
-function cuddle() {
+function cuddle(before = []) {
   const rand = (a, b) => a + Math.random() * (b - a);
   const p = sharedPouf();
   const o = [...others.values()][0];
@@ -666,6 +733,7 @@ function cuddle() {
     x = clamp(o.x + o.cw / 2 + side * (o.cw * 0.32 + cw * 0.32) - cw / 2, 0, W - cw); faceLeft = side > 0;
   }
   script([
+    ...before,
     { walk: x },
     { fn: () => { if (p) s.onPouf = true; s.faceLeft = faceLeft; } },
     { pose: 'knead', ms: 2200, cls: ['purr'], face: { eyes: 'joy' } },
@@ -703,6 +771,56 @@ function goToBasket(sleep, napMs) {
   script([{ walk: x, slow: true }, ...done]);
 }
 function goToSleep() { goToBasket(true); }
+
+// ---- Petites occupations solo ----
+// Il se promène en reniflant le sol
+function sniffAround() {
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const dir = Math.random() < 0.5 ? -1 : 1;
+  const x1 = clamp(s.x + dir * rand(40, 110), 0, W - cw), x2 = clamp(x1 + dir * rand(30, 90), 0, W - cw);
+  const nose = { eyes: 'open', mouth: 'smile' };
+  script([
+    { walk: x1, slow: true },
+    { pose: 'sniff', ms: rand(1400, 2400), face: nose },
+    { walk: x2, slow: true },
+    { pose: 'sniff', ms: rand(1000, 2000), face: nose },
+    { pose: 'sit', ms: rand(2000, 4000), face: { eyes: 'open' } }
+  ]);
+}
+
+// Un papillon passe : il le suit des yeux, se ramasse en remuant le derrière, puis bondit
+const bug = { el: null, x: 0, y: 0, ax: 0, ay: 0, t: 0, away: false };
+function watchBug() {
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const dir = s.faceLeft ? -1 : 1;
+  Object.assign(bug, { ax: clamp(catCenter() + dir * rand(70, 140), 20, W - 20), ay: s.y - rand(10, 60), t: 0, away: false });
+  bug.x = bug.ax + dir * 300; bug.y = bug.ay - 120; // il arrive en voletant
+  const hideBug = () => { if (bug.el) { bug.el.remove(); bug.el = null; } };
+  const see = () => [bug.x, bug.y];
+  script([
+    { fn: () => {
+      hideBug();
+      bug.el = document.createElement('div'); bug.el.className = 'bug';
+      bug.el.innerHTML = '<svg viewBox="0 0 22 18" width="22" height="18"><g class="wing"><path d="M11 9 C5 0 0 3 2 8 C3 11 7 11 11 9 Z" fill="#ffd36e"/><path d="M11 9 C17 0 22 3 20 8 C19 11 15 11 11 9 Z" fill="#ffb347"/></g><rect x="10.2" y="5" width="1.6" height="9" rx=".8" fill="#5a4636"/></svg>';
+      fxLayer.append(bug.el);
+    }, cleanup: hideBug },
+    { pose: 'sit', ms: rand(2500, 4000), lookAt: see, face: { eyes: 'open', mouth: 'o' } },
+    { pose: 'crouch', ms: 1300, lookAt: see, face: { eyes: 'open', mouth: 'o' } },
+    { fn: () => { s.faceLeft = bug.x < catCenter(); hop(clamp(Math.sqrt(2 * GRAVITY * Math.max(40, floorY - bug.y - ch * 0.4)), 420, 900), clamp((bug.x - catCenter()) * 2, -400, 400)); bug.away = true; } },
+    { pose: 'sit', ms: 1800, lookAt: see, face: { eyes: 'open', mouth: 'smile' } },
+    { fn: hideBug, cleanup: hideBug }
+  ]);
+}
+function updateBug(dt) {
+  if (!bug.el) return;
+  if (activity.name !== 'script' || s.gone) { bug.el.remove(); bug.el = null; return; } // son activité a été interrompue
+  bug.t += dt;
+  const tx = bug.away ? bug.ax + (bug.ax > W / 2 ? -1 : 1) * 500 : bug.ax + Math.sin(bug.t * 2.1) * 40;
+  const ty = bug.away ? bug.ay - 500 : bug.ay + Math.sin(bug.t * 3.3) * 18;
+  bug.x += (tx - bug.x) * Math.min(1, dt * (bug.away ? 1.2 : 2.5));
+  bug.y += (ty - bug.y) * Math.min(1, dt * (bug.away ? 1.2 : 2.5)) + Math.sin(bug.t * 17) * 0.6;
+  bug.el.style.left = (bug.x - 11) + 'px'; bug.el.style.top = (bug.y - 9) + 'px';
+}
 
 // Petit réveil pendant la sieste : il s'étire, fait quelques pas, puis retourne se coucher dans son panier
 // (s'il est à 100 % d'énergie, le moteur l'a déjà réveillé pour de bon)
@@ -790,7 +908,7 @@ function currentPose() {
     case 'run': case 'chase': case 'flee': return 'run';
     case 'crazy': return now2() < activity.spinUntil ? 'stand' : Math.abs(s.vx) > 30 ? 'run' : 'crouch';
     case 'hunt': return 'crouch';
-    case 'spin': return 'stand';
+    case 'spin': case 'tailchase': return 'stand';
     case 'groom': case 'roll': case 'knead': case 'stretch': case 'loaf': return activity.name;
     case 'nap': return 'loaf';
     default: return Math.abs(s.vx) > 40 ? 'stand' : 'sit';
@@ -813,7 +931,7 @@ const headUnits = () => {
   if (SIDE_POSES.includes(shownPose)) return { x: 101, y: 30 };
   if (['loaf', 'sleep', 'knead'].includes(shownPose)) return { x: 90, y: 62 };
   if (shownPose === 'roll') return { x: 52, y: 66 };
-  if (['eat', 'drink'].includes(shownPose)) return { x: 70, y: 54 };
+  if (['eat', 'drink', 'sniff'].includes(shownPose)) return { x: 70, y: 54 };
   return { x: 70, y: 40 };
 };
 function mouthPoint() { const h = headUnits(); return toPx(h.x, h.y + 14); }
@@ -852,6 +970,27 @@ function draw(now, dt, moved) {
   updateLook(now);
 }
 
+// Quand rien ne l'intéresse, son regard se promène : l'autre chat, le sol devant lui, un point au hasard,
+// toi de temps en temps, ou droit devant
+const gaze = { until: 0, kind: null, x: 0, y: 0, id: null };
+function gazeAt(now, c) {
+  if (['walk', 'run', 'chase', 'flee', 'crazy'].includes(activity.name) || isMoving()) return null; // en marchant : droit devant
+  if (now > gaze.until) {
+    const rand = (a, b) => a + Math.random() * (b - a);
+    const r = Math.random();
+    gaze.until = now + rand(1500, 4500);
+    if (others.size && r < 0.45) { gaze.kind = 'mate'; gaze.id = [...others.keys()][0]; }
+    else if (r < 0.62) { gaze.kind = 'point'; gaze.x = c.x + (s.faceLeft ? -1 : 1) * rand(60, 220); gaze.y = floorY - 8; }
+    else if (r < 0.82) { gaze.kind = 'point'; gaze.x = c.x + rand(-600, 600); gaze.y = c.y + rand(-300, 40); }
+    else if (r < 0.9 && mouse.inside) { gaze.kind = 'mouse'; }
+    else gaze.kind = null;
+  }
+  if (gaze.kind === 'mate') { const o = others.get(gaze.id); return o ? [o.x + o.cw / 2, o.y + o.ch * 0.3] : null; }
+  if (gaze.kind === 'mouse') return mouse.inside ? [mouse.x, mouse.y] : null;
+  if (gaze.kind === 'point') return [gaze.x, gaze.y];
+  return null;
+}
+
 // Les yeux (et un peu la tête) suivent ce qui l'intéresse : la souris, la balle, la friandise, l'autre chat…
 function updateLook(now) {
   if (s.gone || !state) return;
@@ -866,7 +1005,8 @@ function updateLook(now) {
   else if (game && game.name === 'solo') { tx = mouseToy.x + 15; ty = mouseToy.y; }
   else if (care) { tx = mouse.x; ty = mouse.y; }
   else if (st && st.lookAt) { [tx, ty] = st.lookAt(); }
-  else if (mouse.inside && now - mouse.lastMove < 4000) { tx = mouse.x; ty = mouse.y; }
+  else if (mouse.inside && now - mouse.lastMove < 2500 && Math.hypot(mouse.x - c.x, mouse.y - c.y) < 380) { tx = mouse.x; ty = mouse.y; } // la souris bouge tout près de lui
+  else { const g = gazeAt(now, c); if (g) [tx, ty] = g; }
   if (tx !== null) {
     const dx = tx - c.x, dy = ty - c.y, d = Math.hypot(dx, dy) || 1;
     const k = Math.min(1, d / 120);
@@ -876,6 +1016,7 @@ function updateLook(now) {
     if (care && care.mode === 'love' && d < 220) target.tilt = clamp(dx / 18, -16, 16) * (s.faceLeft ? -1 : 1); // il tend la tête vers la main
   }
   if (['sleep', 'roll', 'groom', 'eat', 'drink'].includes(shownPose)) target = { lx: 0, ly: 0, tilt: 0 };
+  if (shownPose === 'sniff') target = { lx: 0, ly: 2, tilt: 0 }; // le nez au sol
   look.lx += (target.lx - look.lx) * 0.2; look.ly += (target.ly - look.ly) * 0.2; look.tilt += (target.tilt - look.tilt) * 0.1;
   cat.style.setProperty('--lx', look.lx.toFixed(2));
   cat.style.setProperty('--ly', look.ly.toFixed(2));
@@ -966,6 +1107,7 @@ function renderLook() {
     if (activity.name === 'knead' || activity.name === 'roll') { eyes = 'joy'; mouth = activity.name === 'roll' ? 'big' : 'smile'; }
     if (activity.name === 'nap') { eyes = 'closed'; mouth = 'smile'; }
     if (activity.name === 'crazy') { eyes = 'open'; lids = 'none'; brows = 'none'; mouth = 'smile'; }
+    if (activity.name === 'tailchase') { eyes = 'open'; lids = 'none'; mouth = 'o'; }
     if (state.sick && tier !== 'dying') { brows = 'sad'; if (mouth === 'smile' || mouth === 'big') mouth = 'flat'; }
     if (n.energy < LOW && lids === 'none' && eyes === 'open' && !game) lids = 'tired';
     if (fx.blinking && eyes === 'open') eyes = 'closed';

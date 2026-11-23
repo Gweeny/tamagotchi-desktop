@@ -71,7 +71,7 @@
 /* Les trois corps sont superposés ; on passe de l'un à l'autre en fondu (pas de changement brutal) */
 .cat .body-sit, .cat .body-side, .cat .body-loaf { opacity: 0; transition: opacity .18s ease-out, transform .25s ease-out; }
 .cat .groom-paw { display: none; }
-.cat.pose-sit .body-sit, .cat.pose-groom .body-sit, .cat.pose-eat .body-sit, .cat.pose-drink .body-sit,
+.cat.pose-sit .body-sit, .cat.pose-groom .body-sit, .cat.pose-eat .body-sit, .cat.pose-drink .body-sit, .cat.pose-sniff .body-sit,
 .cat.pose-hiss .body-sit, .cat.pose-squat .body-sit, .cat.pose-beg .body-sit, .cat.pose-swat .body-sit,
 .cat.pose-stand .body-side, .cat.pose-walk .body-side, .cat.pose-run .body-side, .cat.pose-jump .body-side,
 .cat.pose-crouch .body-side, .cat.pose-stretch .body-side, .cat.pose-roll .body-side, .cat.pose-lean .body-side,
@@ -87,6 +87,10 @@
 .cat.pose-stretch .head { transform: translate(33px, 14px); }
 .cat.pose-loaf .head, .cat.pose-sleep .head, .cat.pose-knead .head { transform: translate(20px, 24px) scale(.9); }
 .cat.pose-eat .head, .cat.pose-drink .head { transform: translate(0, 14px); }
+/* Il renifle le sol : tête basse, petits coups de nez */
+.cat.pose-sniff .head { transform: translate(0, 12px) rotate(-5deg); }
+.cat.pose-sniff .head-inner { animation: sniff .5s ease-in-out infinite; }
+@keyframes sniff { 0%,100% { transform: translateY(0); } 30% { transform: translateY(-1px); } 60% { transform: translateY(.6px); } }
 .cat.pose-squat .head { transform: translate(0, 5px); }
 .cat.pose-beg .head { transform: translate(0, -3px); }
 .cat.pose-roll .head { transform: translate(-18px, 30px) rotate(-24deg) scale(.92); }
@@ -245,3 +249,8 @@
 .cat.winter .bonnet { display: inline; }
 .cat.spring .flower { display: inline; }
 .cat.hot.pose-loaf .tongue { display: inline !important; animation: lick .5s ease-in-out infinite; }
+
+/* Papillon (activité solo : il le guette puis bondit dessus) */
+.bug { position: absolute; width: 22px; height: 18px; pointer-events: none; z-index: 3; }
+.bug .wing { transform-origin: 50% 100%; animation: flap .14s ease-in-out infinite alternate; transform-box: fill-box; }
+@keyframes flap { from { transform: scaleX(1); } to { transform: scaleX(.25); } }

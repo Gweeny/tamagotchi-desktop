@@ -460,7 +460,7 @@ function sanitizeGuest(c, ownerNick) {
     name: c.name.trim().slice(0, 20) || 'Chat', color: engine.COLORS[c.color], needs, fat,
     stage: ['kitten', 'adult', 'senior'].includes(c.stage) ? c.stage : 'adult',
     weightKg: 0, bodyLabel: engine.bodyLabel(fat),
-    asleep: false, sick: !!c.sick, dead: false, boarding: false, visiting: null,
+    asleep: !!c.asleep, nightSleep: !!c.asleep, sick: !!c.sick, dead: false, boarding: false, visiting: null, // il dort chez l'ami s'il dort chez lui (la nuit)
     expr: { tier: TIERS.includes(c.tier) ? c.tier : 'smile' },
     age: '', need: null, history: [], guestOf: ownerNick
   };
@@ -919,7 +919,7 @@ ipcMain.on('pos', (e, p) => {
 ipcMain.on('social', (e, to, type) => {
   const me = mateOf(e.sender);
   const from = me && me.id;
-  if (!from || type !== 'chased') return;
+  if (!from || !['chased', 'crazy', 'zchase'].includes(type)) return;
   const target = screenMates(me.displayId).find(m => m.id === to);
   if (target) target.wc.send('social', { from, type });
 });
