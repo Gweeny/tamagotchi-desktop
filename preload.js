@@ -21,10 +21,11 @@ contextBridge.exposeInMainWorld('desk', {
   cleanPoop: (index) => ipcRenderer.send('clean-poop', Number(index)),
   setPouf: (ratio) => ipcRenderer.send('set-pouf', Number(ratio)),
   movePouf: (side) => ipcRenderer.send('move-pouf', String(side)),
+  poufMenu: () => ipcRenderer.send('pouf-menu'),
   pos: (p) => ipcRenderer.send('pos', {
     x: Number(p.x), y: Number(p.y), cw: Number(p.cw), ch: Number(p.ch), faceLeft: !!p.faceLeft,
     pose: String(p.pose), asleep: !!p.asleep, onPouf: !!p.onPouf,
-    pouf: p.pouf ? { x: Number(p.pouf.x), w: Number(p.pouf.w) } : null
+    pouf: p.pouf ? { x: Number(p.pouf.x), w: Number(p.pouf.w), kind: String(p.pouf.kind), color: String(p.pouf.color) } : null
   }),
   social: (to, type) => ipcRenderer.send('social', String(to), String(type)),
   setNick: (nick) => ipcRenderer.send('set-nick', String(nick)),

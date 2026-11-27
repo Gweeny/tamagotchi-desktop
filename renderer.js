@@ -14,7 +14,22 @@ const MAX_THROW = 4000;      // vitesse max d'un lancer (px/s)
 const WALK = 70, TROT = 180, RUN = 330; // vitesses (px/s, adulte)
 const NEED_BUBBLE_MS = 60000;
 const LOW = 30;              // en dessous, l'animation du besoin s'affiche
-const POUF_W = 160, POUF_H = 59, POUF_LIFT = 22; // le panier (assez grand pour deux), et de combien le chat est surélevé dessus
+const POUF_LIFT = 22; // de combien le chat est surélevé sur son coussin
+// Son lit : coussin (assez grand pour deux) ou arbre à chat. Pour l'arbre : les places (centre en px depuis
+// le bord gauche de l'arbre, hauteur depuis le sol) et la balle qui pend sous le perchoir.
+const BEDS = {
+  pouf: { w: 160, h: 59, top: 5 },
+  tree: { w: 112, h: 160, top: 2, spots: { top: { cx: 41, lift: 160 }, mid: { cx: 46, lift: 107 }, condo: { cx: 78, lift: 7 } },
+    pivot: { x: 70, y: 7 }, rope: 31, condoTop: 62 }
+};
+// Couleurs de l'arbre : clair, foncé, plateformes, contours, intérieur de la niche, balle
+const TREE_COLORS = {
+  beige:      ['#c4a174', '#8f6d47', '#aa875d', '#563f25', '#271b10', '#e8607a'],
+  rose:       ['#c88395', '#925466', '#ad6d80', '#57293a', '#2a1018', '#7fd0f0'],
+  vert:       ['#5d8a55', '#36582f', '#4a7343', '#1f3319', '#111c0d', '#ffcf5a'],
+  anthracite: ['#70737b', '#3f4147', '#575a61', '#222327', '#141518', '#ffcf5a'],
+  chocolat:   ['#93664a', '#583926', '#76503a', '#33200f', '#1e130b', '#ffd9a0']
+};
 const SIDE_POSES = ['stand', 'walk', 'run', 'jump', 'crouch', 'stretch', 'lean', 'scratch'];
 
 // Fenêtre d'un chat invité (le chat d'un ami en visite chez moi) ?
@@ -25,10 +40,11 @@ const cat = $('cat');
 const svg = () => cat.querySelector('svg');
 const bubble = $('bubble'), zzz = $('zzz'), panel = $('panel'), grave = $('grave'), pension = $('pension');
 const ballEl = $('ball'), wandEl = $('wand'), toyMouseEl = $('toy-mouse'), hintEl = $('game-hint'), tagEl = $('tag');
+const poufFrontEl = $('pouf-front'); poufFrontEl.innerHTML = window.CAT_PROPS.treeFront;
 const poufEl = $('pouf'), waterEl = $('water'), foodEl = $('food'), treatEl = $('treat'), vetEl = $('vet'), pillEl = $('pill');
 const brushEl = $('brush-cursor'), handEl = $('hand-cursor'), poopsEl = $('poops'), fxLayer = $('fx-layer');
 // Les objets sont dessinés dans cat-art.js
-for (const [el, key] of [[poufEl, 'pouf'], [waterEl, 'water'], [foodEl, 'food'], [treatEl, 'treat'], [vetEl, 'vet'], [pillEl, 'pill'], [brushEl, 'brush'], [handEl, 'hand']]) {
+for (const [el, key] of [[waterEl, 'water'], [foodEl, 'food'], [treatEl, 'treat'], [vetEl, 'vet'], [pillEl, 'pill'], [brushEl, 'brush'], [handEl, 'hand']]) {
   el.innerHTML = window.CAT_PROPS[key];
 }
 
@@ -37,7 +53,8 @@ let edges = { left: 'wall', right: 'wall' }; // 'screen' | 'friend' | 'wall' | '
 let here = false;     // le chat est-il sur cet écran ?
 let home = false;     // écran « maison » (pouf, crottes) ?
 let K = 1, cw = BASE_W, ch = BASE_H, U = cw / 140; // taille (un chaton est bien plus petit)
-const s = { x: 200, y: 0, vx: 0, vy: 0, rot: 0, vrot: 0, dragging: false, onFloor: false, gone: true, faceLeft: false, thrown: false, onPouf: false, travel: false };
+const s = { x: 200, y: 0, vx: 0, vy: 0, rot: 0, vrot: 0, dragging: false, onFloor: false, gone: true, faceLeft: false, thrown: false, onPouf: false, travel: false,
+  spotKind: null, spot: null, leap: null }; // spotKind/spot : où il est installé (coussin, ou une place de l'arbre) ; leap : saut en cours
 let dragOffset = { x: 0, y: 0 };
 let samples = [];     // positions récentes de la souris (vitesse des lancers)
 const mouse = { x: -1, y: -1, inside: false, lastMove: 0, speed: 0 };
@@ -51,6 +68,8 @@ let care = null;      // séance de caresses ou de brossage
 let lastHunt = 0;
 let poufX = null;     // position du pouf (px, bord gauche) — seulement sur l'écran du panier
 let poufDir = null;   // sinon : de quel côté se trouve l'écran du panier ('left' / 'right')
+let bedColor = 'vert';
+let bedKind = 'pouf'; // son lit : 'pouf' (coussin) ou 'tree' (arbre à chat)
 let napGoal = null;   // il change d'écran pour aller faire la sieste dans son panier
 const others = new Map(); // autres chats sur cet écran (visite) : id -> { x, y, cw, ch, faceLeft, pose, asleep, onPouf, t }
 const greeted = new Set();
@@ -68,6 +87,7 @@ Promise.all([window.desk.getScreen(), window.desk.getState()]).then(([scr, res])
   here = scr.catHere;
   home = !!scr.home;
   poufDir = scr.poufDir || null;
+  setBedKind(scr.bed); setBedColor(scr.bedColor);
   if (home) placePouf(scr.poufX);
   s.x = W - cw - 150; s.y = floorY - ch;
 
@@ -99,6 +119,8 @@ window.desk.onTogglePanel(togglePanel);
 // Le panier a changé d'écran
 window.desk.onPoufInfo((info) => {
   home = !!info.home; poufDir = info.poufDir || null;
+  if (info.bed) setBedKind(info.bed);
+  if (info.bedColor) setBedColor(info.bedColor);
   if (home) placePouf(info.poufX);
   else { poufX = null; poufEl.style.display = 'none'; poopsEl.replaceChildren(); knownPoops = null; }
   if (home && state && !GUEST) syncPoops(state, state);
@@ -209,7 +231,7 @@ const captured = () => s.dragging || setupOpen || ball.held || poufDrag || (game
 
 cat.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !state || state.dead || state.boarding || captured()) return;
-  s.dragging = true; s.onFloor = false; s.onPouf = false;
+  s.dragging = true; s.onFloor = false; s.onPouf = false; s.leap = null;
   s.vx = s.vy = s.vrot = 0;
   dragOffset = { x: e.clientX - s.x, y: e.clientY - s.y };
   samples = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
@@ -247,7 +269,7 @@ function release() {
     poufDrag = null;
     const side = mouse.x <= 20 ? 'left' : mouse.x >= W - 20 ? 'right' : null; // lâché contre un bord (ou au-delà)
     if (side) window.desk.movePouf(side);
-    else window.desk.setPouf((poufX + POUF_W / 2) / W);
+    else window.desk.setPouf((poufX + BEDS[bedKind].w / 2) / W);
     if (!poufEl.matches(':hover')) window.desk.setClickable(false);
     return;
   }
@@ -282,6 +304,7 @@ window.addEventListener('keydown', (e) => {
 // Le pouf se déplace à la souris (glisser-déposer)
 let poufDrag = null;
 poufEl.addEventListener('mousedown', (e) => { if (e.button === 0) { poufDrag = e.clientX - poufX; e.preventDefault(); } });
+poufEl.addEventListener('contextmenu', (e) => { e.preventDefault(); if (!captured()) window.desk.poufMenu(); }); // coussin ou arbre à chat
 
 // =====================================================================
 //  Boucle principale
@@ -305,19 +328,67 @@ function tick(now) {
   draw(now, dt, Math.abs(s.x - x0));
   updateTreat(dt);
   updateBug(dt);
+  updateTreeBall(dt);
+  placeFront();
   // Position partagée avec les autres chats de l'écran (visites)
   if (here && !s.gone && now - lastPos > 200) {
     lastPos = now;
     window.desk.pos({ x: s.x, y: s.y, cw, ch, faceLeft: s.faceLeft, pose: shownPose, asleep: !!(state && state.asleep), onPouf: s.onPouf,
-      pouf: home && !GUEST && poufX !== null ? { x: poufX, w: POUF_W } : null });
+      pouf: home && !GUEST && poufX !== null ? { x: poufX, w: BEDS[bedKind].w, kind: bedKind, color: bedColor } : null });
   }
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
 
-const groundY = () => floorY - (s.onPouf ? POUF_LIFT * (0.6 + 0.4 * K) : 0);
+const groundY = () => floorY - (s.onPouf ? spotLift() : 0);
+const liftOf = (spot) => BEDS.tree.spots[spot].lift;
+function spotLift() {
+  if (s.spotKind === 'tree') return BEDS.tree.spots[s.spot] ? liftOf(s.spot) : 0;
+  return POUF_LIFT * (0.6 + 0.4 * K);
+}
+const highSpot = () => s.onPouf && s.spotKind === 'tree' && spotLift() > 40;
+// Descendre de l'arbre comme un vrai chat : depuis le haut, parfois d'un seul bond jusqu'au sol,
+// parfois en passant par la plateforme du milieu (petite pause, puis deuxième saut)
+function leapDown(dir) {
+  const p = sharedPouf();
+  const floorX = clamp(dir > 0 ? (p ? p.x + p.w + 4 : s.x + 110) : (p ? p.x - cw - 4 : s.x - 110), 0, W - cw);
+  const toFloor = () => startLeap(floorX, floorY - ch, () => { s.spot = null; }, { prep: 200 });
+  if (p && s.spot === 'top' && Math.random() < 0.6) {
+    const midX = clamp(p.x + (dir > 0 ? 70 : 22) - cw / 2, 0, W - cw);
+    startLeap(midX, floorY - BEDS.tree.spots.mid.lift - ch, () => {
+      s.onPouf = true; s.spotKind = 'tree'; s.spot = 'mid';
+      setTimeout(() => { if (s.onPouf && s.spot === 'mid' && !s.leap && !s.dragging) toFloor(); }, 350 + Math.random() * 500);
+    });
+    return;
+  }
+  toFloor();
+}
+
+// Saut vers un point précis (monter dans l'arbre, en redescendre) : une belle trajectoire en cloche
+function startLeap(x1, y1, onLand, opts = {}) {
+  const dist = Math.hypot(x1 - s.x, y1 - s.y);
+  const up = Math.max(0, s.y - y1), down = Math.max(0, y1 - s.y);
+  s.leap = { x0: s.x, y0: s.y, x1, y1, t0: performance.now(), prep: opts.prep ?? 240, flew: false,
+    dur: opts.dur ?? (360 + dist * 0.8 + down * 0.4), h: opts.h ?? (up ? up * 0.35 + 26 : 14), onLand };
+  s.onPouf = false; s.vx = 0;
+  if (Math.abs(x1 - s.x) > 4) s.faceLeft = x1 < s.x;
+}
+function leapStep() {
+  const L = s.leap, now = performance.now();
+  if (now < L.t0 + L.prep) { s.vx = 0; s.vy = 0; return; } // il se ramasse, prêt à bondir
+  if (!L.flew) { L.flew = true; s.onFloor = false; flash('stretch', 140); }
+  const u = Math.min(1, (now - L.t0 - L.prep) / L.dur);
+  const y = L.y0 + (L.y1 - L.y0) * u - L.h * 4 * u * (1 - u);
+  s.vy = (y - s.y) * 60; // seulement pour la pose (monte / retombe)
+  s.x = L.x0 + (L.x1 - L.x0) * u; s.y = y; s.vx = 0;
+  if (u < 1) return;
+  s.leap = null; s.vy = 0; s.onFloor = true;
+  flash('squash', 130);
+  if (L.onLand) L.onLand();
+}
 
 function physics(dt) {
+  if (s.leap) { leapStep(); return; }
   s.vy += GRAVITY * dt;
   s.vx *= AIR_DRAG; s.vy *= AIR_DRAG;
   s.x += s.vx * dt; s.y += s.vy * dt;
@@ -355,7 +426,7 @@ function hop(vy, vx) {
   if (!s.onFloor) return;
   flash('stretch', 140);
   const k = Math.sqrt(speedK());
-  s.vy = -vy * k; s.vx = vx; s.onFloor = false; s.onPouf = false;
+  s.vy = -vy * k; s.vx = vx; s.onFloor = false; s.onPouf = false; s.leap = null;
 }
 
 // Bords gauche/droite : autre écran, ami, retour chez lui (invité) ou mur
@@ -396,7 +467,13 @@ const canSocialize = () => state && !state.asleep && !state.dead && !game && !ca
 function think(now) {
   if (!state || state.dead || state.boarding || override || game || (care && care.mode !== 'love')) return;
 
-  if (s.onPouf && Math.abs(s.vx) > 5) s.onPouf = false; // il descend du panier
+  if (s.leap) return; // en plein saut
+  // Son lit a changé (ou n'est plus là) pendant qu'il était dessus : il en descend
+  if (s.onPouf && s.spotKind) { const p = sharedPouf(); if (!p || (p.kind || 'pouf') !== s.spotKind) s.onPouf = false; }
+  if (s.onPouf && Math.abs(s.vx) > 5) { // il descend de son lit
+    if (highSpot()) { leapDown(Math.sign(s.vx)); return; } // de l'arbre : il saute
+    s.onPouf = false;
+  }
   if (activity.name === 'script') { runScript(now); return; }
 
   // Endormi : il va dormir sur son pouf (ou contre un autre chat qui dort)
@@ -412,7 +489,7 @@ function think(now) {
     return;
   }
   napStirAt = 0;
-  if (activity.name === 'sleep') { s.onPouf = false; activity = { name: 'stretch', until: now + 1600 }; pulse('yawning', 1400); }
+  if (activity.name === 'sleep') { if (s.spotKind !== 'tree') s.onPouf = false; activity = { name: 'stretch', until: now + 1600 }; pulse('yawning', 1400); } // dans l'arbre, il s'étire sur place
   if (care && care.mode === 'love') { followHand(now); return; }
   if (!s.onFloor) return;
 
@@ -475,6 +552,7 @@ function nextActivity(now) {
   const n = state.needs, tier = state.expr.tier;
   const rand = (a, b) => a + Math.random() * (b - a);
   if (maybeBeg(now)) return;
+  if (bigGroomDue() && !['dramatic', 'dying'].includes(tier)) { bigGroom(); return; }
 
   // Un autre chat est là : on le salue d'abord, puis on joue ou on se blottit contre lui
   if (canSocialize() || activity.name === 'sit' || activity.name === 'loaf') {
@@ -499,6 +577,12 @@ function nextActivity(now) {
     w.sniff = 1; w.bug = tier === 'grumpy' ? 0.2 : 0.7; w.tail = state.stage === 'kitten' ? 0.5 : 0.2;
     if (w.groom) w.groom += 0.5;
   }
+  // Son arbre à chat : il joue avec la balle qui pend, et il aime s'y installer
+  if (bedKind === 'tree' && home && !GUEST && !others.size) {
+    if (['ecstatic', 'happy', 'smile'].includes(tier) && n.energy > 25) w.treeball = 1.2;
+    w.perch = 1; // perché en haut, il regarde autour de lui
+    w.loaf = (w.loaf || 0) + 1.5;
+  }
   // Pendant une visite, ils restent ensemble : s'il s'est éloigné de l'autre chat, il le rejoint
   const mate = others.size ? [...others.values()][0] : null;
   if (mate && Math.abs((mate.x + mate.cw / 2) - catCenter()) > 320) { w.join = 8; delete w.walk; delete w.sniff; delete w.bug; }
@@ -520,6 +604,11 @@ function nextActivity(now) {
     case 'join': { const side = catCenter() < mate.x + mate.cw / 2 ? -1 : 1;
       activity = { name: 'walk', target: clamp(mate.x + mate.cw / 2 + side * (mate.cw * 0.5 + cw * 0.5 + 10) - cw / 2, 10, W - cw - 10), until: now + 15000 }; break; }
     case 'sniff': sniffAround(); break;
+    case 'treeball': if (!playTreeBall()) activity = { name: 'sit', until: now + 10000 }; break;
+    case 'perch': { const p = sharedPouf();
+      if (p && p.kind === 'tree') script([...bedSteps(p, Math.random() < 0.7 ? 'top' : 'mid'), { pose: 'sit', ms: rand(15000, 35000) }, { pose: Math.random() < 0.5 ? 'groom' : 'sit', ms: rand(4000, 8000) }]);
+      else activity = { name: 'sit', until: now + 15000 };
+      break; }
     case 'bug': watchBug(); break;
     case 'tail': activity = { name: 'tailchase', until: now + rand(1800, 3000), nextFlip: 0 }; break;
     case 'crazy': startCrazy(now); break;
@@ -626,6 +715,22 @@ function applyPersonality(w) {
   }
 }
 
+// ---- La grande toilette (1 fois par heure, 1 min) : pattes et visage, flancs des deux côtés, encore les pattes ----
+const BIG_GROOM_EVERY = 3600000;
+function bigGroomDue() { try { return Date.now() - (Number(localStorage.getItem('lastBigGroom')) || 0) > BIG_GROOM_EVERY; } catch { return false; } }
+function bigGroom() {
+  try { localStorage.setItem('lastBigGroom', String(Date.now())); } catch {}
+  const calm = { eyes: 'closed', mouth: 'smile' };
+  script([
+    { pose: 'groom', ms: 12000, face: calm },
+    { pose: 'lick', ms: 14000, face: calm },
+    { fn: () => { s.faceLeft = !s.faceLeft; } },
+    { pose: 'lick', ms: 14000, face: calm },
+    { pose: 'groom', ms: 8000, face: calm },
+    { pose: 'lick', ms: 12000, face: calm }
+  ]);
+}
+
 // ---- Le quart d'heure de folie (au plus une fois par heure, mémorisé pour toutes les fenêtres) ----
 const CRAZY_MS = 30000, CRAZY_EVERY = 3600000;
 function lastCrazy() { try { return Number(localStorage.getItem('lastCrazy')) || 0; } catch { return 0; } }
@@ -713,12 +818,44 @@ function greet(id, o) {
 
 // Le panier : le mien (écran maison) ou celui de l'autre chat (je suis invité chez lui)
 function sharedPouf() {
-  if (home && !GUEST && poufX !== null) return { x: poufX, w: POUF_W };
+  if (home && !GUEST && poufX !== null) return { x: poufX, w: BEDS[bedKind].w, kind: bedKind, color: bedColor };
   for (const o of others.values()) if (o.pouf) return o.pouf;
   return null;
 }
 // Place dans le panier quand on est deux : le chat de la maison à gauche, l'invité à droite, tournés l'un vers l'autre
 function poufSlot(p) { return clamp(p.x + p.w / 2 + (GUEST ? 1 : -1) * p.w * 0.18 - cw / 2, 0, W - cw); }
+
+// Où dormir dans l'arbre : en haut ou dans la niche (au hasard) ; à deux, l'hôte en haut et l'invité dans la niche
+function restSpot() {
+  if (others.size) return GUEST ? 'condo' : 'top';
+  return Math.random() < 0.7 ? 'top' : 'condo';
+}
+const spotCx = (spot) => (spot === 'mid' ? BEDS.tree.pivot.x - cw * 0.3 : BEDS.tree.spots[spot].cx); // au milieu : la balle devant sa patte
+// Étapes pour s'installer dans son lit p ({ x, w, kind }) : sur le coussin il monte en marchant,
+// dans l'arbre il prend son élan à côté puis saute à sa place
+function bedSteps(p, spot, opts = {}) {
+  const face = () => { if (opts.face !== undefined) s.faceLeft = opts.face; };
+  if (p.kind !== 'tree') {
+    const x = opts.slot ? poufSlot(p) : p.x + p.w / 2 - cw / 2;
+    return [{ walk: x, slow: opts.slow }, { fn: () => { s.onPouf = true; s.spotKind = 'pouf'; s.spot = null; face(); } }];
+  }
+  if (s.onPouf && s.spotKind === 'tree' && s.spot === spot) return [{ fn: face }]; // il y est déjà
+  const tx = clamp(p.x + spotCx(spot) - cw / 2, 0, W - cw);
+  const fromLeft = s.x + cw / 2 < p.x + spotCx(spot);
+  const run = spot === 'condo' ? 45 : 80;
+  let runX = tx + (fromLeft ? -1 : 1) * run;
+  if (runX < 0 || runX > W - cw) runX = tx - (fromLeft ? -1 : 1) * run; // pas de place de ce côté
+  const settle = () => { // dans la niche : on le décale pour que sa tête soit au milieu du trou
+    if (spot !== 'condo') return face();
+    s.faceLeft = opts.face !== undefined ? opts.face : Math.random() < 0.5;
+    s.x = clamp(p.x + BEDS.tree.spots.condo.cx - cw / 2, 0, W - cw); // au milieu de l'ouverture
+  };
+  // En haut : comme un vrai chat, il passe d'abord par la plateforme du milieu
+  const via = spot === 'top' && !(s.onPouf && s.spotKind === 'tree' && s.spot === 'mid')
+    ? [{ leap: { x: clamp(p.x + spotCx('mid') - cw / 2, 0, W - cw), lift: liftOf('mid'), spot: 'mid' } }, { pose: 'sit', ms: 350 }] : [];
+  const onMid = s.onPouf && s.spotKind === 'tree' && s.spot === 'mid' && spot === 'top';
+  return [...(onMid ? [] : [{ walk: clamp(runX, 0, W - cw), slow: opts.slow }]), ...via, { leap: { x: tx, lift: liftOf(spot), spot } }, { fn: settle }];
+}
 
 // Se blottir contre l'autre chat, dans le panier (ou à côté de lui s'il n'y a pas de panier)
 function cuddle(before = []) {
@@ -726,16 +863,16 @@ function cuddle(before = []) {
   const p = sharedPouf();
   const o = [...others.values()][0];
   if (!p && !o) { activity = { name: 'loaf', until: performance.now() + 30000 }; return; }
-  let x, faceLeft;
-  if (p && others.size) { x = poufSlot(p); faceLeft = !!GUEST; }
+  let go;
+  if (p) go = bedSteps(p, restSpot(), { slot: others.size > 0, face: others.size ? !!GUEST : undefined });
   else {
     const side = (s.x + cw / 2) < (o.x + o.cw / 2) ? -1 : 1;
-    x = clamp(o.x + o.cw / 2 + side * (o.cw * 0.32 + cw * 0.32) - cw / 2, 0, W - cw); faceLeft = side > 0;
+    const x = clamp(o.x + o.cw / 2 + side * (o.cw * 0.32 + cw * 0.32) - cw / 2, 0, W - cw);
+    go = [{ walk: x }, { fn: () => { s.faceLeft = side > 0; } }];
   }
   script([
     ...before,
-    { walk: x },
-    { fn: () => { if (p) s.onPouf = true; s.faceLeft = faceLeft; } },
+    ...go,
     { pose: 'knead', ms: 2200, cls: ['purr'], face: { eyes: 'joy' } },
     { pose: 'loaf', ms: rand(35000, 70000), cls: ['purr'], face: { eyes: 'closed' } }
   ]);
@@ -749,10 +886,8 @@ function goToBasket(sleep, napMs) {
     ? [{ fn: () => { activity = { name: 'sleep' }; } }]
     : [{ pose: 'loaf', ms: napMs, face: { eyes: 'closed' }, cls: ['purr'] }];
   if (p) {
-    const x = others.size ? poufSlot(p) : p.x + p.w / 2 - cw / 2;
     script([
-      { walk: x, slow: sleep },
-      { fn: () => { s.onPouf = true; if (others.size) s.faceLeft = !!GUEST; } },
+      ...bedSteps(p, restSpot(), { slot: others.size > 0, slow: sleep, face: others.size ? !!GUEST : undefined }),
       { pose: 'knead', ms: 1600, face: { eyes: 'closed' }, cls: ['purr'] },
       ...done
     ]);
@@ -811,6 +946,23 @@ function watchBug() {
     { fn: hideBug, cleanup: hideBug }
   ]);
 }
+// Le mur de la niche (avec son trou) ou le rebord du panier du haut passent devant lui quand il y est installé
+function placeFront() {
+  const p = sharedPouf();
+  const inside = p && p.kind === 'tree' && s.onPouf && s.spotKind === 'tree' && !s.gone && !s.leap && (s.spot === 'condo' || s.spot === 'mid');
+  poufFrontEl.classList.toggle('show', !!inside);
+  // Dans la niche, il est au fond : on le dessine plus petit (il tient en entier dans la niche, roulé en boule)
+  // et un peu dans l'ombre, au lieu d'un gros plan sur sa tête
+  const inCondo = inside && s.spot === 'condo';
+  const sc = inCondo ? String(Math.min(1, 52 / cw).toFixed(3)) : '';
+  if (cat.style.scale !== sc) { cat.style.scale = sc; cat.style.transformOrigin = '50% 100%'; cat.style.filter = inCondo ? 'brightness(.86)' : ''; }
+  if (!inside) return;
+  poufFrontEl.classList.toggle('condo', s.spot === 'condo');
+  if (GUEST && p.color && p.color !== poufFrontEl.dataset.color) { poufFrontEl.dataset.color = p.color; paintTree(poufFrontEl, p.color); }
+  poufFrontEl.classList.toggle('ball', s.spot === 'mid' && !GUEST);
+  poufFrontEl.style.left = p.x + 'px';
+  poufFrontEl.style.top = (floorY - BEDS.tree.h + BEDS.tree.top) + 'px';
+}
 function updateBug(dt) {
   if (!bug.el) return;
   if (activity.name !== 'script' || s.gone) { bug.el.remove(); bug.el = null; return; } // son activité a été interrompue
@@ -848,10 +1000,8 @@ function restInBasket(pose, ms) {
     if (pose === 'loaf' && poufDir && !GUEST && !others.size) { goToBasket(false, ms); return true; }
     return false;
   }
-  const x = others.size ? poufSlot(p) : p.x + p.w / 2 - cw / 2;
   script([
-    { walk: x },
-    { fn: () => { s.onPouf = true; if (others.size) s.faceLeft = !!GUEST; } },
+    ...bedSteps(p, restSpot(), { slot: others.size > 0, face: others.size ? !!GUEST : undefined }),
     { pose, ms }
   ]);
   return true;
@@ -879,6 +1029,17 @@ function runScript(now) {
     s.vx = st.exit * WALK * 0.8 * speedK(); s.faceLeft = st.exit < 0;
     return;
   }
+  if ('leap' in st) { // sauter à sa place dans l'arbre
+    if (!a.leapGo) {
+      if (!s.onFloor) return;
+      a.leapGo = true;
+      const L = st.leap;
+      if (L.x === undefined || L.here) { L.here = true; L.x = s.x; }
+      startLeap(clamp(L.x, 0, W - cw), floorY - L.lift - ch, () => { s.onPouf = true; s.spotKind = 'tree'; s.spot = L.spot; }, { h: L.h, prep: L.prep, dur: L.dur });
+      if (L.onTakeoff) setTimeout(L.onTakeoff, (L.prep ?? 240) + (L.dur || 400) * 0.45);
+    } else if (!s.leap) { a.leapGo = false; next(); }
+    return;
+  }
   if ('walk' in st) {
     if (!s.onFloor) return;
     const dx = clamp(st.walk, 0, W - cw) - s.x; // jamais au-delà des bords de l'écran
@@ -896,6 +1057,7 @@ function currentPose() {
   if (!state) return 'sit';
   if (state.dead) return 'sit';
   if (override && override.pose) return override.pose;
+  if (s.leap && !s.leap.flew) return 'crouch'; // élan avant un saut
   if (s.dragging || !s.onFloor) return 'jump';
   if (care) return care.pose || 'sit';
   const st = scriptStep();
@@ -932,6 +1094,7 @@ const headUnits = () => {
   if (['loaf', 'sleep', 'knead'].includes(shownPose)) return { x: 90, y: 62 };
   if (shownPose === 'roll') return { x: 52, y: 66 };
   if (['eat', 'drink', 'sniff'].includes(shownPose)) return { x: 70, y: 54 };
+  if (shownPose === 'lick') return { x: 52, y: 60 };
   return { x: 70, y: 40 };
 };
 function mouthPoint() { const h = headUnits(); return toPx(h.x, h.y + 14); }
@@ -1017,6 +1180,7 @@ function updateLook(now) {
   }
   if (['sleep', 'roll', 'groom', 'eat', 'drink'].includes(shownPose)) target = { lx: 0, ly: 0, tilt: 0 };
   if (shownPose === 'sniff') target = { lx: 0, ly: 2, tilt: 0 }; // le nez au sol
+  if (shownPose === 'lick') target = { lx: 0, ly: 0, tilt: 0 };
   look.lx += (target.lx - look.lx) * 0.2; look.ly += (target.ly - look.ly) * 0.2; look.tilt += (target.tilt - look.tilt) * 0.1;
   cat.style.setProperty('--lx', look.lx.toFixed(2));
   cat.style.setProperty('--ly', look.ly.toFixed(2));
@@ -1426,11 +1590,82 @@ function flash(cls, ms) {
 // =====================================================================
 function placePouf(ratio, x) {
   if (!home || GUEST) return;
-  poufX = x !== undefined ? clamp(x, 0, W - POUF_W) : clamp((Number.isFinite(ratio) ? ratio : 0.82) * W - POUF_W / 2, 0, W - POUF_W);
-  if (x !== undefined && (x < 0 || x > W - POUF_W)) poufEl.classList.add('leaving'); else poufEl.classList.remove('leaving');
+  const B = BEDS[bedKind];
+  poufX = x !== undefined ? clamp(x, 0, W - B.w) : clamp((Number.isFinite(ratio) ? ratio : 0.82) * W - B.w / 2, 0, W - B.w);
+  if (x !== undefined && (x < 0 || x > W - B.w)) poufEl.classList.add('leaving'); else poufEl.classList.remove('leaving');
   poufEl.style.display = 'block';
+  poufEl.style.width = B.w + 'px'; poufEl.style.height = B.h + 'px';
   poufEl.style.left = poufX + 'px';
-  poufEl.style.top = (floorY - POUF_H + 5) + 'px';
+  poufEl.style.top = (floorY - B.h + B.top) + 'px';
+}
+// Couleur de l'arbre (clic droit sur le lit) : variables CSS utilisées par le dessin
+function paintTree(el, key) {
+  const c = TREE_COLORS[key] || TREE_COLORS.vert;
+  ['--t1', '--t2', '--t3', '--t4', '--t5', '--tb'].forEach((v, i) => el.style.setProperty(v, c[i]));
+}
+function setBedColor(key) {
+  bedColor = TREE_COLORS[key] ? key : 'vert';
+  paintTree(poufEl, bedColor); paintTree(poufFrontEl, bedColor);
+}
+// Coussin ou arbre à chat (clic droit sur le lit)
+function setBedKind(kind) {
+  kind = kind === 'tree' ? 'tree' : 'pouf';
+  if (kind === bedKind && poufEl.firstChild) return;
+  bedKind = kind;
+  poufEl.innerHTML = window.CAT_PROPS[kind];
+  treeBall.el = poufEl.querySelector('#tree-ball');
+  treeBall.front = poufFrontEl.querySelector('#tree-ball-front');
+  if (s.onPouf && !GUEST) { s.onPouf = false; s.leap = null; } // il descend de l'ancien lit
+  if (home && poufX !== null) placePouf(null, poufX + 0); // garde sa place
+}
+
+// La balle qui pend sous le perchoir : un petit pendule (il la tape, elle se balance puis ralentit)
+const treeBall = { el: null, front: null, a: 0, w: 0 };
+function updateTreeBall(dt) {
+  if (bedKind !== 'tree' || !treeBall.el || !home || GUEST) return;
+  if (Math.abs(treeBall.a) < 0.002 && Math.abs(treeBall.w) < 0.002) return;
+  treeBall.w += -20 * Math.sin(treeBall.a) * dt;
+  treeBall.w *= Math.exp(-dt * 0.7);
+  treeBall.a += treeBall.w * dt;
+  const P = BEDS.tree.pivot;
+  const tr = `rotate(${(treeBall.a * 180 / Math.PI).toFixed(2)} ${P.x} ${P.y})`;
+  treeBall.el.setAttribute('transform', tr);
+  if (treeBall.front) treeBall.front.setAttribute('transform', tr);
+}
+function treeBallPos() {
+  const p = sharedPouf(), T = BEDS.tree;
+  if (!p) return [0, 0];
+  const top = floorY - T.h + T.top;
+  return [p.x + T.pivot.x - Math.sin(treeBall.a) * T.rope, top + T.pivot.y + Math.cos(treeBall.a) * T.rope]; // rotate() SVG : sens horaire
+}
+function pushTreeBall() { treeBall.w += (s.faceLeft ? 1 : -1) * (2.4 + Math.random() * 1.6); } // tapée vers la droite : elle part à droite
+
+// Il monte sur la niche et joue avec la balle qui pend (coups de patte, il la regarde se balancer)
+function playTreeBall() {
+  const p = sharedPouf();
+  if (!p || p.kind !== 'tree' || GUEST) return false;
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const eyes = { eyes: 'open', mouth: 'o' };
+  const swat = () => ({ pose: 'swat', ms: 600, face: eyes, lookAt: treeBallPos, onStart: pushTreeBall });
+  const watch = (ms) => ({ pose: 'sit', ms, face: eyes, lookAt: treeBallPos });
+  const steps = [...bedSteps(p, 'mid', { face: false }), watch(900)];
+  const kind = Math.random();
+  if (kind < 0.4) { // assis : coups de patte
+    const n = 3 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < n; i++) steps.push(swat(), watch(rand(500, 1600)));
+  } else if (kind < 0.7) { // sur le dos, les pattes en l'air sous la balle
+    const n = 4 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < n; i++) steps.push({ pose: 'roll', ms: rand(700, 1300), face: { eyes: 'open', mouth: 'big' }, lookAt: treeBallPos, onStart: () => { if (Math.random() < 0.8) pushTreeBall(); } });
+  } else { // il se ramasse en remuant le derrière, puis bondit pour l'attraper (plusieurs essais)
+    const n = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) steps.push(
+      { pose: 'crouch', ms: rand(700, 1500), face: eyes, lookAt: treeBallPos },
+      { leap: { here: true, lift: BEDS.tree.spots.mid.lift, spot: 'mid', h: 26 + Math.random() * 14, prep: 0, dur: 520, onTakeoff: pushTreeBall } },
+      watch(rand(600, 1200)));
+  }
+  steps.push({ pose: 'sit', ms: rand(2000, 4000), face: { eyes: 'joy', mouth: 'smile' }, lookAt: treeBallPos });
+  script(steps);
+  return true;
 }
 
 // =====================================================================

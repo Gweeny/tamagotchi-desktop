@@ -224,6 +224,64 @@
 
   // ---- Objets autour du chat (dessinés en SVG, posés au sol ou suivant la souris) ----
   const PROPS = {
+    // Arbre à chat (112 x 160), d'après un vrai modèle : socle, niche avec une ouverture en arche (à droite),
+    // grand poteau à gauche (sisal en bas), petit poteau sur la niche, plateforme du milieu,
+    // poteau et plateforme du haut, et une petite balle qui pend sous la plateforme du haut.
+    // Couleurs : variables CSS (--t1 … --tb) ; ombres et reflets : dégradés blancs/noirs transparents par-dessus.
+    tree: `<svg viewBox="0 0 112 160" width="112" height="160">
+      <defs><pattern id="sisal" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(-14)">
+          <rect width="5" height="5" fill="#e2cfaa"/><rect width="5" height="1.8" fill="#c4a87a"/><rect y="1.8" width="5" height=".6" fill="#fff" opacity=".35"/></pattern>
+        <pattern id="fur" width="4" height="4" patternUnits="userSpaceOnUse">
+          <rect x=".5" y=".5" width=".9" height=".9" fill="#000" opacity=".05"/><rect x="2.5" y="2.4" width=".9" height=".9" fill="#fff" opacity=".1"/></pattern>
+        <linearGradient id="cyl" x1="0" x2="1"><stop offset="0" stop-color="#000" stop-opacity=".22"/><stop offset=".3" stop-color="#fff" stop-opacity=".38"/>
+          <stop offset=".55" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".32"/></linearGradient>
+        <linearGradient id="ao" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".38"/><stop offset="1" stop-color="#000" stop-opacity="0"/></linearGradient>
+        <linearGradient id="topf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".6"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+        <linearGradient id="face" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".3"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".2"/></linearGradient>
+        <linearGradient id="faceV" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".18"/><stop offset=".7" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".16"/></linearGradient>
+        <radialGradient id="hole" cx=".5" cy=".9" r=".9"><stop offset="0" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".55"/></radialGradient>
+        <radialGradient id="soft"><stop offset="0" stop-color="#000" stop-opacity=".3"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
+        <radialGradient id="ballhi" cx=".35" cy=".3" r=".75"><stop offset="0" stop-color="#fff" stop-opacity=".85"/><stop offset=".35" stop-color="#fff" stop-opacity=".1"/>
+          <stop offset=".8" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".35"/></radialGradient></defs>
+      <ellipse cx="56" cy="157.5" rx="58" ry="4" fill="url(#soft)"/>
+      <rect x="8" y="58" width="13" height="95" rx="5" fill="var(--t1)"/><rect x="8" y="118" width="13" height="35" rx="4" fill="url(#sisal)"/><rect x="8" y="58" width="13" height="95" rx="5" fill="url(#cyl)"/><rect x="8" y="58" width="13" height="7" fill="url(#ao)"/><rect x="8" y="58" width="13" height="95" rx="5" fill="none" stroke="var(--t4)" stroke-width="1"/>
+      <rect x="52" y="58" width="11" height="42" rx="4.5" fill="var(--t1)"/><rect x="52" y="58" width="11" height="42" rx="4.5" fill="url(#cyl)"/><rect x="52" y="58" width="11" height="7" fill="url(#ao)"/><rect x="52" y="58" width="11" height="42" rx="4.5" fill="none" stroke="var(--t4)" stroke-width="1"/>
+      <rect x="22" y="6" width="12" height="50" rx="5" fill="var(--t1)"/><rect x="22" y="6" width="12" height="50" rx="5" fill="url(#cyl)"/><rect x="22" y="6" width="12" height="7" fill="url(#ao)"/><rect x="22" y="6" width="12" height="50" rx="5" fill="none" stroke="var(--t4)" stroke-width="1"/>
+      <ellipse cx="78" cy="100" rx="30" ry="3.2" fill="url(#soft)"/>
+      <rect x="0" y="151" width="112" height="8" rx="4.0" fill="var(--t3)"/><rect x="0" y="151" width="112" height="8" rx="4.0" fill="url(#fur)"/><rect x="1" y="155.64" width="110" height="2.88" rx="1.44" fill="var(--t2)"/><rect x="1.5" y="151.6" width="109" height="3.6" rx="1.76" fill="url(#topf)"/><rect x="0" y="151" width="112" height="8" rx="4.0" fill="none" stroke="var(--t4)" stroke-width="1.1"/>
+      <path d="M53 98 H101 Q110 98 110 107 V144 Q110 153 101 153 H53 Q44 153 44 144 V107 Q44 98 53 98 Z" fill="var(--t1)"/><path d="M53 98 H101 Q110 98 110 107 V144 Q110 153 101 153 H53 Q44 153 44 144 V107 Q44 98 53 98 Z" fill="url(#fur)"/><path d="M53 98 H101 Q110 98 110 107 V144 Q110 153 101 153 H53 Q44 153 44 144 V107 Q44 98 53 98 Z" fill="url(#face)"/><path d="M53 98 H101 Q110 98 110 107 V144 Q110 153 101 153 H53 Q44 153 44 144 V107 Q44 98 53 98 Z" fill="url(#faceV)"/><path d="M50 100.5 H104" stroke="#fff" stroke-opacity=".55" stroke-width="1.6" stroke-linecap="round"/><path d="M53 98 H101 Q110 98 110 107 V144 Q110 153 101 153 H53 Q44 153 44 144 V107 Q44 98 53 98 Z" fill="none" stroke="var(--t4)" stroke-width="1.4"/><path d="M60 148 V132 A18 18 0 0 1 96 132 V148" fill="none" stroke="var(--t4)" stroke-width="2.4"/><path d="M61.5 147 V132.5 A16.5 16.5 0 0 1 72 117.6" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1"/>
+      <path d="M60 148 V132 A18 18 0 0 1 96 132 V148 Z" fill="var(--t5)"/>
+      <path d="M60 148 V132 A18 18 0 0 1 96 132 V148 Z" fill="url(#hole)"/>
+      <ellipse cx="78" cy="146.5" rx="14" ry="2.6" fill="#000" opacity=".25"/>
+      <path d="M60 148 V132 A18 18 0 0 1 96 132 V148" fill="none" stroke="var(--t4)" stroke-width="2.4"/>
+      <path d="M61.5 147 V132.5 A16.5 16.5 0 0 1 72 117.6" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1"/>
+      <rect x="0" y="53" width="92" height="9" rx="4.5" fill="var(--t3)"/><rect x="0" y="53" width="92" height="9" rx="4.5" fill="url(#fur)"/><rect x="1" y="58.22" width="90" height="3.2399999999999998" rx="1.6199999999999999" fill="var(--t2)"/><rect x="1.5" y="53.6" width="89" height="4.05" rx="1.98" fill="url(#topf)"/><rect x="0" y="53" width="92" height="9" rx="4.5" fill="none" stroke="var(--t4)" stroke-width="1.1"/>
+      <rect x="6" y="0" width="70" height="9" rx="4.5" fill="var(--t3)"/><rect x="6" y="0" width="70" height="9" rx="4.5" fill="url(#fur)"/><rect x="7" y="5.22" width="68" height="3.2399999999999998" rx="1.6199999999999999" fill="var(--t2)"/><rect x="7.5" y="0.6" width="67" height="4.05" rx="1.98" fill="url(#topf)"/><rect x="6" y="0" width="70" height="9" rx="4.5" fill="none" stroke="var(--t4)" stroke-width="1.1"/>
+      <g id="tree-ball"><line x1="70" y1="8" x2="70" y2="33" stroke="#8d7155" stroke-width="1.1"/><circle cx="70" cy="38" r="5.6" fill="var(--tb)"/><circle cx="70" cy="38" r="5.6" fill="url(#ballhi)"/><circle cx="70" cy="38" r="5.6" fill="none" stroke="#000" stroke-opacity=".18" stroke-width=".7"/></g>
+    </svg>`,
+    // Ce qui passe DEVANT le chat : le mur de la niche (avec son ouverture) quand il est dedans,
+    // la petite balle quand il joue sur la plateforme du milieu
+    treeFront: `<svg viewBox="0 0 112 160" width="112" height="160">
+      <defs><pattern id="sisal2" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(-14)">
+          <rect width="5" height="5" fill="#e2cfaa"/><rect width="5" height="1.8" fill="#c4a87a"/><rect y="1.8" width="5" height=".6" fill="#fff" opacity=".35"/></pattern>
+        <pattern id="fur2" width="4" height="4" patternUnits="userSpaceOnUse">
+          <rect x=".5" y=".5" width=".9" height=".9" fill="#000" opacity=".05"/><rect x="2.5" y="2.4" width=".9" height=".9" fill="#fff" opacity=".1"/></pattern>
+        <linearGradient id="cyl2" x1="0" x2="1"><stop offset="0" stop-color="#000" stop-opacity=".22"/><stop offset=".3" stop-color="#fff" stop-opacity=".38"/>
+          <stop offset=".55" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".32"/></linearGradient>
+        <linearGradient id="ao2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".38"/><stop offset="1" stop-color="#000" stop-opacity="0"/></linearGradient>
+        <linearGradient id="topf2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".6"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+        <linearGradient id="face2" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".3"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".2"/></linearGradient>
+        <linearGradient id="faceV2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".18"/><stop offset=".7" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".16"/></linearGradient>
+        <radialGradient id="hole2" cx=".5" cy=".9" r=".9"><stop offset="0" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".55"/></radialGradient>
+        <radialGradient id="soft2"><stop offset="0" stop-color="#000" stop-opacity=".3"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
+        <radialGradient id="ballhi2" cx=".35" cy=".3" r=".75"><stop offset="0" stop-color="#fff" stop-opacity=".85"/><stop offset=".35" stop-color="#fff" stop-opacity=".1"/>
+          <stop offset=".8" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".35"/></radialGradient></defs>
+      <g class="f-condo">
+        <path fill-rule="evenodd" d="M53 98 H101 Q110 98 110 107 V144 Q110 153 101 153 H53 Q44 153 44 144 V107 Q44 98 53 98 Z M60 148 V132 A18 18 0 0 1 96 132 V148 Z" fill="var(--t1)"/><path fill-rule="evenodd" d="M53 98 H101 Q110 98 110 107 V144 Q110 153 101 153 H53 Q44 153 44 144 V107 Q44 98 53 98 Z M60 148 V132 A18 18 0 0 1 96 132 V148 Z" fill="url(#fur2)"/><path fill-rule="evenodd" d="M53 98 H101 Q110 98 110 107 V144 Q110 153 101 153 H53 Q44 153 44 144 V107 Q44 98 53 98 Z M60 148 V132 A18 18 0 0 1 96 132 V148 Z" fill="url(#face2)"/><path fill-rule="evenodd" d="M53 98 H101 Q110 98 110 107 V144 Q110 153 101 153 H53 Q44 153 44 144 V107 Q44 98 53 98 Z M60 148 V132 A18 18 0 0 1 96 132 V148 Z" fill="url(#faceV2)"/><path d="M50 100.5 H104" stroke="#fff" stroke-opacity=".55" stroke-width="1.6" stroke-linecap="round"/><path fill-rule="evenodd" d="M53 98 H101 Q110 98 110 107 V144 Q110 153 101 153 H53 Q44 153 44 144 V107 Q44 98 53 98 Z M60 148 V132 A18 18 0 0 1 96 132 V148 Z" fill="none" stroke="var(--t4)" stroke-width="1.4"/><path d="M60 148 V132 A18 18 0 0 1 96 132 V148" fill="none" stroke="var(--t4)" stroke-width="2.4"/><path d="M61.5 147 V132.5 A16.5 16.5 0 0 1 72 117.6" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1"/>
+        <rect x="0" y="151" width="112" height="8" rx="4.0" fill="var(--t3)"/><rect x="0" y="151" width="112" height="8" rx="4.0" fill="url(#fur2)"/><rect x="1" y="155.64" width="110" height="2.88" rx="1.44" fill="var(--t2)"/><rect x="1.5" y="151.6" width="109" height="3.6" rx="1.76" fill="url(#topf2)"/><rect x="0" y="151" width="112" height="8" rx="4.0" fill="none" stroke="var(--t4)" stroke-width="1.1"/>
+      </g>
+      <g class="f-ball" id="tree-ball-front"><line x1="70" y1="8" x2="70" y2="33" stroke="#8d7155" stroke-width="1.1"/><circle cx="70" cy="38" r="5.6" fill="var(--tb)"/><circle cx="70" cy="38" r="5.6" fill="url(#ballhi2)"/><circle cx="70" cy="38" r="5.6" fill="none" stroke="#000" stroke-opacity=".18" stroke-width=".7"/></g>
+    </svg>`,
     pouf: `<svg viewBox="0 0 120 44" width="160" height="59">
       <ellipse cx="60" cy="38" rx="56" ry="6" fill="#000" opacity=".12"/>
       <path d="M6 30 C4 16 20 8 60 8 C100 8 116 16 114 30 C112 40 94 42 60 42 C26 42 8 40 6 30 Z" fill="#f7b8c8"/>

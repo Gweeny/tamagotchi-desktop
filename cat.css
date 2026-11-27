@@ -71,7 +71,7 @@
 /* Les trois corps sont superposés ; on passe de l'un à l'autre en fondu (pas de changement brutal) */
 .cat .body-sit, .cat .body-side, .cat .body-loaf { opacity: 0; transition: opacity .18s ease-out, transform .25s ease-out; }
 .cat .groom-paw { display: none; }
-.cat.pose-sit .body-sit, .cat.pose-groom .body-sit, .cat.pose-eat .body-sit, .cat.pose-drink .body-sit, .cat.pose-sniff .body-sit,
+.cat.pose-sit .body-sit, .cat.pose-groom .body-sit, .cat.pose-lick .body-sit, .cat.pose-eat .body-sit, .cat.pose-drink .body-sit, .cat.pose-sniff .body-sit,
 .cat.pose-hiss .body-sit, .cat.pose-squat .body-sit, .cat.pose-beg .body-sit, .cat.pose-swat .body-sit,
 .cat.pose-stand .body-side, .cat.pose-walk .body-side, .cat.pose-run .body-side, .cat.pose-jump .body-side,
 .cat.pose-crouch .body-side, .cat.pose-stretch .body-side, .cat.pose-roll .body-side, .cat.pose-lean .body-side,
@@ -142,6 +142,11 @@
 .cat.pose-groom .groom-paw { animation: groom .7s ease-in-out infinite; transform-origin: 80% 100%; }
 .cat.pose-groom .head-inner { transform: rotate(-9deg); }
 .cat.pose-groom .tongue { display: inline !important; }
+/* Il se lèche le corps : tête tournée vers son flanc, petits coups de langue */
+.cat.pose-lick .head { transform: translate(9px, 15px) rotate(24deg) scale(.92); }
+.cat.pose-lick .head-inner { animation: lickbody .5s ease-in-out infinite; }
+.cat.pose-lick .tongue { display: inline !important; animation: lap .5s ease-in-out infinite; }
+@keyframes lickbody { 0%,100% { transform: translate(0, 0) rotate(0); } 50% { transform: translate(-1px, 1.5px) rotate(-4deg); } }
 @keyframes groom { 0%,100% { transform: rotate(0); } 50% { transform: rotate(14deg); } }
 .cat.pose-eat .head-inner { animation: chew .4s ease-in-out infinite; }
 .cat.pose-drink .tongue { display: inline !important; animation: lap .32s ease-in-out infinite; }

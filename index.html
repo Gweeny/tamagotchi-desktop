@@ -87,6 +87,10 @@
   /* ================= Objets ================= */
   #pouf { position: absolute; display: none; width: 160px; height: 59px; cursor: grab; }
   #pouf.leaving { opacity: .5; }
+  #pouf-front { position: absolute; display: none; pointer-events: none; z-index: 2; width: 112px; height: 160px; }
+  #pouf-front.show { display: block; }
+  #pouf-front .f-condo, #pouf-front .f-ball { display: none; }
+  #pouf-front.condo .f-condo, #pouf-front.ball .f-ball { display: inline; }
   .prop { position: absolute; opacity: 0; pointer-events: none; transition: opacity .4s; z-index: 2; transform-origin: 50% 100%; }
   #cat { z-index: 1; }
   .prop.show { opacity: 1; }
@@ -145,7 +149,8 @@
   <div id="tag"></div>
 
   <!-- Objets : pouf, gamelles, crottes, friandise, véto, brosse, main -->
-  <div id="pouf" class="hit" title="Son pouf (tu peux le déplacer)"></div>
+  <div id="pouf" class="hit" title="Son lit (tu peux le déplacer ; clic droit : coussin ou arbre à chat)"></div>
+  <div id="pouf-front"></div>
   <div id="poops"></div>
   <div id="water" class="prop"></div>
   <div id="food" class="prop"></div>

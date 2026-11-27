@@ -18,6 +18,8 @@ const SAVE_MS = 60000;
 const VISIT_MS = 10 * 60000;      // un invité rentre chez lui au bout de 10 min
 const GUEST_POLL_MS = 10000;      // l'hôte demande des nouvelles du chat invité
 const SIDES = ['left', 'right', 'none'];
+const BEDS = ['pouf', 'tree']; // son lit : coussin ou arbre à chat
+const TREE_COLORS = { beige: 'Beige', rose: 'Rose', vert: 'Vert foncé', anthracite: 'Anthracite', chocolat: 'Chocolat' };
 const GUEST_CARE = ['pet', 'feed-kibble', 'feed-treat'];
 
 // Dossier de sauvegarde fixe (il ne dépend pas du nom affiché de l'app)
@@ -29,7 +31,7 @@ const windows = new Map(); // id de l'écran -> fenêtre transparente
 let catDisplayId = null;   // écran où se trouve le chat
 let cat = null;            // état du chat (null tant qu'il n'a pas été créé)
 // friendSide : côté du PC de l'ami ; friendId : l'ami choisi ; nickname : mon pseudo sur le réseau
-let settings = { id: null, nickname: null, friendSide: null, friendId: null, acceptVisits: true, friendIps: [], poufX: 0.82, poufDisplay: null, weatherCity: null, weatherCoords: null, autoStart: true, autoUpdate: true };
+let settings = { id: null, nickname: null, friendSide: null, friendId: null, acceptVisits: true, friendIps: [], poufX: 0.82, poufDisplay: null, bed: 'pouf', bedColor: 'vert', weatherCity: null, weatherCoords: null, autoStart: true, autoUpdate: true };
 let tray = null;
 let hidden = false;        // fenêtres masquées depuis la zone de notification
 let lan = null;
@@ -73,6 +75,8 @@ function loadSettings() {
   if (Array.isArray(s.friendIps)) settings.friendIps = s.friendIps.filter(isIPv4).slice(0, 10);
   if (Number.isFinite(s.poufX)) settings.poufX = Math.max(0, Math.min(1, s.poufX));
   if (Number.isFinite(s.poufDisplay)) settings.poufDisplay = s.poufDisplay;
+  if (BEDS.includes(s.bed)) settings.bed = s.bed;
+  if (TREE_COLORS[s.bedColor]) settings.bedColor = s.bedColor;
   if (typeof s.autoStart === 'boolean') settings.autoStart = s.autoStart;
   if (typeof s.autoUpdate === 'boolean') settings.autoUpdate = s.autoUpdate;
   if (typeof s.weatherCity === 'string') settings.weatherCity = s.weatherCity.slice(0, 60);
@@ -352,7 +356,7 @@ function poufDirFrom(d) {
 function sendPouf() {
   for (const d of screen.getAllDisplays()) {
     const w = windows.get(d.id);
-    if (w) w.webContents.send('pouf-info', { home: d.id === poufDisplay().id, poufX: settings.poufX, poufDir: poufDirFrom(d) });
+    if (w) w.webContents.send('pouf-info', { home: d.id === poufDisplay().id, poufX: settings.poufX, poufDir: poufDirFrom(d), bed: settings.bed, bedColor: settings.bedColor });
   }
   for (const g of guests.values()) if (!g.win.isDestroyed()) g.win.webContents.send('pouf-info', { home: false, poufX: null, poufDir: poufDirFrom(guestDisplay(g)) });
 }
@@ -365,7 +369,9 @@ function screenInfo(d) {
     catHere: d.id === catDisplayId,
     home: d.id === poufDisplay().id,
     poufX: settings.poufX,
-    poufDir: poufDirFrom(d)
+    poufDir: poufDirFrom(d),
+    bed: settings.bed,
+    bedColor: settings.bedColor
   };
 }
 
@@ -884,11 +890,27 @@ ipcMain.on('move-pouf', (e, side) => {
   const d = displayOf(e.sender);
   if (!d || d.id !== poufDisplay().id) return;
   const edge = edgesOf(d)[side];
-  if (edge.type !== 'screen') { e.sender.send('pouf-info', { home: true, poufX: settings.poufX, poufDir: null }); return; } // ami ou mur : il reste ici
+  if (edge.type !== 'screen') { e.sender.send('pouf-info', { home: true, poufX: settings.poufX, poufDir: null, bed: settings.bed, bedColor: settings.bedColor }); return; } // ami ou mur : il reste ici
   settings.poufDisplay = edge.to;
   settings.poufX = side === 'right' ? 0.1 : 0.9; // il arrive près du bord par lequel on l'a fait passer
   saveSettings();
   sendPouf();
+});
+// Clic droit sur son lit : coussin ou arbre à chat
+ipcMain.on('pouf-menu', (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win || guestOf(e.sender)) return;
+  const pick = (bed) => { settings.bed = bed; saveSettings(); sendPouf(); };
+  Menu.buildFromTemplate([
+    { label: 'Son lit', enabled: false },
+    { label: 'Coussin', type: 'radio', checked: settings.bed === 'pouf', click: () => pick('pouf') },
+    { label: 'Arbre à chat', type: 'radio', checked: settings.bed === 'tree', click: () => pick('tree') },
+    { type: 'separator' },
+    { label: "Couleur de l'arbre", submenu: Object.entries(TREE_COLORS).map(([key, label]) => ({
+      label, type: 'radio', checked: settings.bedColor === key,
+      click: () => { settings.bedColor = key; if (settings.bed !== 'tree') settings.bed = 'tree'; saveSettings(); sendPouf(); }
+    })) }
+  ]).popup({ window: win });
 });
 ipcMain.on('set-pouf', (e, ratio) => {
   if (guestOf(e.sender) || !Number.isFinite(ratio)) return;
@@ -913,7 +935,7 @@ ipcMain.on('pos', (e, p) => {
   const me = mateOf(e.sender);
   if (!me || ![p.x, p.y, p.cw, p.ch].every(Number.isFinite)) return;
   const pos = { id: me.id, x: p.x, y: p.y, cw: p.cw, ch: p.ch, faceLeft: !!p.faceLeft, pose: String(p.pose).slice(0, 12), asleep: !!p.asleep, onPouf: !!p.onPouf };
-  if (p.pouf && Number.isFinite(p.pouf.x) && Number.isFinite(p.pouf.w)) pos.pouf = { x: p.pouf.x, w: p.pouf.w };
+  if (p.pouf && Number.isFinite(p.pouf.x) && Number.isFinite(p.pouf.w)) pos.pouf = { x: p.pouf.x, w: p.pouf.w, kind: BEDS.includes(p.pouf.kind) ? p.pouf.kind : 'pouf', color: TREE_COLORS[p.pouf.color] ? p.pouf.color : 'vert' };
   for (const m of screenMates(me.displayId)) if (m.id !== me.id) m.wc.send('others', [pos]);
 });
 ipcMain.on('social', (e, to, type) => {

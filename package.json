@@ -1,7 +1,7 @@
 {
   "name": "tamagotchi-desktop",
   "productName": "Tamagotchi Desktop",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "description": "Un chaton kawaii qui vit sur ton bureau et rend visite à tes amis",
   "author": "Sam",
   "main": "main.js",
